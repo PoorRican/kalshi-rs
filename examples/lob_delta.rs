@@ -2,7 +2,7 @@
 ///
 /// This channel is explicitly called out in the docs as being authenticated
 
-use kalshi_adapter::{KalshiAuth, KalshiEnvironment, KalshiWsClient, WsChannel};
+use kalshi::{KalshiAuth, KalshiEnvironment, KalshiWsClient, WsChannel};
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {

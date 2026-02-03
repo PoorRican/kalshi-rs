@@ -1,4 +1,5 @@
-use kalshi_adapter::{KalshiEnvironment, KalshiWsClient, WsChannel};
+use anyhow;
+use kalshi::{KalshiEnvironment, KalshiWsClient, WsChannel};
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
