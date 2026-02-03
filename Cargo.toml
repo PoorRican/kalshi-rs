@@ -30,3 +30,4 @@ base64 = "0.22"
 
 [dev-dependencies]
 anyhow = "1"
+dotenvy = "0.15"
