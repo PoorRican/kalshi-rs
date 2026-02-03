@@ -1,0 +1,29 @@
+[package]
+name = "kalshi-rs"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+# REST
+reqwest = { version = "0.12", features = ["json", "rustls-tls"] }
+
+# Async runtime
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "time"] }
+
+# WebSocket
+tokio-tungstenite = { version = "0.24", features = ["rustls-tls-webpki-roots"] }
+futures = "0.3"
+
+# Serde
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# URL + errors
+url = "2"
+thiserror = "1"
+
+# Auth (RSA-PSS SHA256 + base64)
+rsa = { version = "0.9", features = ["pem"] }
+sha2 = "0.10"
+rand = "0.8"
+base64 = "0.22"
