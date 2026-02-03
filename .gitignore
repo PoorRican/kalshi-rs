@@ -1,1 +1,4 @@
 /target
+.env.test
+*.pem
+*.key
