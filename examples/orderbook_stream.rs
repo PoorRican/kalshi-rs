@@ -8,8 +8,8 @@
 /// Requires KALSHI_KEY_ID and KALSHI_PRIVATE_KEY_PATH env vars (or .env file)
 
 use kalshi::{
-    GetMarketsParams, KalshiAuth, KalshiEnvironment, KalshiRestClient, KalshiWsClient,
-    MarketStatus, MveFilter, WsChannel,
+    GetMarketsParams, KalshiAuth, KalshiEnvironment, KalshiRestClient, KalshiWsClient, Market,
+    MarketStatus, MveFilter, WsDataMessage, WsMessage, WsSubscriptionParams,
 };
 use std::time::Duration;
 use tokio::time::sleep;
@@ -17,11 +17,8 @@ use tokio::time::sleep;
 const MIN_VOLUME_24H: i64 = 10_000;
 const MAX_PAGES: usize = 50;
 
-fn get_volume(market: &serde_json::Value) -> i64 {
-    market
-        .get("volume_24h")
-        .and_then(|v| v.as_i64())
-        .unwrap_or(0)
+fn get_volume(market: &Market) -> i64 {
+    market.volume_24h.unwrap_or(0)
 }
 
 #[tokio::main]
@@ -35,7 +32,7 @@ async fn main() -> anyhow::Result<()> {
     println!("Searching for markets with 24h volume > {MIN_VOLUME_24H}...");
 
     let mut cursor: Option<String> = None;
-    let mut target_market: Option<serde_json::Value> = None;
+    let mut target_market: Option<Market> = None;
 
     for _page in 1..=MAX_PAGES {
         let resp = client
@@ -60,7 +57,7 @@ async fn main() -> anyhow::Result<()> {
             _ => break,
         }
 
-        // Rate limit: 100ms between requests
+        // Rate limit: 100ms between requests (extra safety; client also rate limits)
         sleep(Duration::from_millis(100)).await;
     }
 
@@ -74,8 +71,8 @@ async fn main() -> anyhow::Result<()> {
     };
 
     let event_ticker = target_market
-        .get("event_ticker")
-        .and_then(|v| v.as_str())
+        .event_ticker
+        .as_deref()
         .ok_or_else(|| anyhow::anyhow!("Market missing event_ticker"))?;
 
     println!("Found event: {} (volume: {})", event_ticker, get_volume(&target_market));
@@ -93,7 +90,7 @@ async fn main() -> anyhow::Result<()> {
     let market_tickers: Vec<String> = event_markets
         .markets
         .iter()
-        .filter_map(|m| m.get("ticker").and_then(|v| v.as_str()).map(String::from))
+        .map(|m| m.ticker.clone())
         .collect();
 
     println!("Subscribing to {} markets: {:?}", market_tickers.len(), market_tickers);
@@ -108,33 +105,41 @@ async fn main() -> anyhow::Result<()> {
 
     // Step 4: Subscribe to orderbook deltas
     let sub_id = ws
-        .subscribe(vec![WsChannel::OrderbookDelta], Some(market_tickers))
+        .subscribe(WsSubscriptionParams {
+            channels: vec![kalshi::WsChannel::OrderbookDelta],
+            market_tickers: Some(market_tickers),
+            ..Default::default()
+        })
         .await?;
 
     println!("Subscribed (id={}), streaming...\n", sub_id);
 
     // Step 5: Stream updates
     loop {
-        let envelope = ws.next_envelope().await?;
-
-        match envelope.msg_type.as_str() {
-            "orderbook_snapshot" => {
-                let snap = envelope.parse_orderbook_snapshot()?;
+        let msg = ws.next_message().await?;
+        match msg {
+            WsMessage::Data(WsDataMessage::OrderbookSnapshot { msg, seq, .. }) => {
                 println!(
                     "[SNAPSHOT] {} | yes={} no={} | seq={:?}",
-                    snap.market_ticker, snap.yes.len(), snap.no.len(), envelope.seq
+                    msg.market_ticker,
+                    msg.yes.len(),
+                    msg.no.len(),
+                    seq
                 );
             }
-            "orderbook_delta" => {
-                let delta = envelope.parse_orderbook_delta()?;
+            WsMessage::Data(WsDataMessage::OrderbookDelta { msg, seq, .. }) => {
                 println!(
                     "[DELTA] {} | {}@{} {:+} | seq={:?}",
-                    delta.market_ticker, delta.side, delta.price, delta.delta, envelope.seq
+                    msg.market_ticker,
+                    msg.side,
+                    msg.price,
+                    msg.delta,
+                    seq
                 );
             }
-            "subscribed" => println!("[SUBSCRIBED] sid={:?}", envelope.sid),
-            "error" => println!("[ERROR] {:?}", envelope.msg),
-            other => println!("[{}] {:?}", other, envelope.msg),
+            WsMessage::Subscribed { sid, .. } => println!("[SUBSCRIBED] sid={:?}", sid),
+            WsMessage::Error { error, .. } => println!("[ERROR] {:?}", error),
+            other => println!("[OTHER] {:?}", other),
         }
     }
 }

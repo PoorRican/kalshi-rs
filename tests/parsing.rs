@@ -246,7 +246,7 @@ fn get_positions_response_deserializes() {
 #[test]
 fn get_orders_response_deserializes() {
     let json = r#"{
-        "orders": [{"order_id": "ord-1", "status": "resting"}]
+        "orders": [{"order_id": "ord-1", "ticker": "MKT-1", "status": "resting"}]
     }"#;
 
     let resp: kalshi::GetOrdersResponse = serde_json::from_str(json).unwrap();
@@ -261,19 +261,20 @@ fn create_order_response_deserializes() {
     }"#;
 
     let resp: kalshi::CreateOrderResponse = serde_json::from_str(json).unwrap();
-    assert_eq!(resp.order["order_id"], "ord-123");
+    assert_eq!(resp.order.order_id, "ord-123");
+    assert_eq!(resp.order.ticker, "MKT-1");
 }
 
 #[test]
 fn cancel_order_response_deserializes() {
     let json = r#"{
-        "order": {"order_id": "ord-123", "status": "canceled"},
+        "order": {"order_id": "ord-123", "ticker": "MKT-1", "status": "canceled"},
         "reduced_by": 5,
         "reduced_by_fp": "5.0"
     }"#;
 
     let resp: kalshi::CancelOrderResponse = serde_json::from_str(json).unwrap();
-    assert_eq!(resp.order["status"], "canceled");
+    assert_eq!(resp.order.status, Some(OrderStatus::Canceled));
     assert_eq!(resp.reduced_by, 5);
     assert_eq!(resp.reduced_by_fp, "5.0");
 }

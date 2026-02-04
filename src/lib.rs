@@ -9,10 +9,10 @@ pub mod ws;
 pub use auth::{KalshiAuth, KalshiAuthHeaders};
 pub use env::{KalshiEnvironment, REST_PREFIX, WS_PATH};
 pub use error::KalshiError;
-pub use rest::KalshiRestClient;
+pub use rest::{KalshiRestClient, RateLimitConfig, RateLimitTier};
 pub use ws::KalshiWsClient;
 
 // Backwards-compatible type re-exports
 pub use types::*;
 pub use rest::types::*;
-pub use ws::{WsChannel, WsEnvelope, WsFill, WsOrderbookDelta, WsOrderbookSnapshot, WsTicker};
+pub use ws::types::*;

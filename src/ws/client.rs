@@ -1,7 +1,11 @@
 use crate::auth::KalshiAuth;
 use crate::env::{KalshiEnvironment, WS_PATH};
 use crate::error::KalshiError;
-use crate::ws::types::{WsChannel, WsEnvelope, WsSubscribeCmd, WsSubscribeParams};
+use crate::ws::types::{
+    validate_subscription, WsEnvelope, WsListSubscriptionsCmd, WsMessage, WsSubscribeCmd,
+    WsSubscriptionParams, WsUnsubscribeCmd, WsUnsubscribeParams, WsUpdateSubscriptionCmd,
+    WsUpdateSubscriptionParams,
+};
 
 use futures::{SinkExt, StreamExt};
 
@@ -73,17 +77,14 @@ impl KalshiWsClient {
         })
     }
 
-    /// Subscribe to channels; add `market_tickers` when required (e.g. orderbook_delta).
-    pub async fn subscribe(
-        &mut self,
-        channels: Vec<WsChannel>,
-        market_tickers: Option<Vec<String>>,
-    ) -> Result<u64, KalshiError> {
-        let needs_auth = channels.iter().any(|c| c.is_private());
+    /// Subscribe to channels.
+    pub async fn subscribe(&mut self, params: WsSubscriptionParams) -> Result<u64, KalshiError> {
+        let needs_auth = params.channels.iter().any(|c| c.is_private());
         if needs_auth && !self.authenticated {
-            // Server would emit code 9 "Authentication required"
             return Err(KalshiError::AuthRequired("WebSocket private channel subscription"));
         }
+
+        validate_subscription(&params)?;
 
         let id = self.next_id;
         self.next_id += 1;
@@ -91,10 +92,7 @@ impl KalshiWsClient {
         let cmd = WsSubscribeCmd {
             id,
             cmd: "subscribe",
-            params: WsSubscribeParams {
-                channels,
-                market_tickers,
-            },
+            params,
         };
 
         let text = serde_json::to_string(&cmd)?;
@@ -106,16 +104,69 @@ impl KalshiWsClient {
         Ok(id)
     }
 
-    /// Read the next JSON message from the stream.
+    /// Unsubscribe from a subscription id.
+    pub async fn unsubscribe(&mut self, sid: u64) -> Result<u64, KalshiError> {
+        let id = self.next_id;
+        self.next_id += 1;
+
+        let cmd = WsUnsubscribeCmd {
+            id,
+            cmd: "unsubscribe",
+            params: WsUnsubscribeParams { sid },
+        };
+
+        let text = serde_json::to_string(&cmd)?;
+        self.write
+            .send(Message::Text(text))
+            .await
+            .map_err(|e| KalshiError::Ws(e.to_string()))?;
+
+        Ok(id)
+    }
+
+    /// Update an existing subscription.
+    pub async fn update_subscription(&mut self, params: WsUpdateSubscriptionParams) -> Result<u64, KalshiError> {
+        let id = self.next_id;
+        self.next_id += 1;
+
+        let cmd = WsUpdateSubscriptionCmd {
+            id,
+            cmd: "update_subscription",
+            params,
+        };
+
+        let text = serde_json::to_string(&cmd)?;
+        self.write
+            .send(Message::Text(text))
+            .await
+            .map_err(|e| KalshiError::Ws(e.to_string()))?;
+
+        Ok(id)
+    }
+
+    /// List active subscriptions.
+    pub async fn list_subscriptions(&mut self) -> Result<u64, KalshiError> {
+        let id = self.next_id;
+        self.next_id += 1;
+
+        let cmd = WsListSubscriptionsCmd { id, cmd: "list_subscriptions" };
+        let text = serde_json::to_string(&cmd)?;
+        self.write
+            .send(Message::Text(text))
+            .await
+            .map_err(|e| KalshiError::Ws(e.to_string()))?;
+
+        Ok(id)
+    }
+
+    /// Read the next JSON envelope from the stream.
     pub async fn next_envelope(&mut self) -> Result<WsEnvelope, KalshiError> {
         while let Some(msg) = self.read.next().await {
             let msg = msg.map_err(|e| KalshiError::Ws(e.to_string()))?;
             match msg {
                 Message::Text(s) => return Ok(serde_json::from_str::<WsEnvelope>(&s)?),
                 Message::Binary(b) => {
-                    // If server ever sends binary JSON, attempt decode.
-                    let s = String::from_utf8(b).map_err(|e| KalshiError::Ws(e.to_string()))?;
-                    return Ok(serde_json::from_str::<WsEnvelope>(&s)?);
+                    return Ok(serde_json::from_slice::<WsEnvelope>(&b)?);
                 }
                 Message::Ping(payload) => {
                     self.write
@@ -133,5 +184,31 @@ impl KalshiWsClient {
             }
         }
         Err(KalshiError::Ws("websocket stream ended".to_string()))
+    }
+
+    /// Read the next JSON message and parse into a typed WsMessage.
+    pub async fn next_message(&mut self) -> Result<WsMessage, KalshiError> {
+        let env = self.next_envelope().await?;
+        env.into_message()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::ws::types::WsChannel;
+
+    #[test]
+    fn private_channel_check() {
+        assert!(WsChannel::Fill.is_private());
+        assert!(WsChannel::OrderbookDelta.is_private());
+        assert!(WsChannel::MarketPositions.is_private());
+        assert!(WsChannel::Communications.is_private());
+        assert!(WsChannel::OrderGroupUpdates.is_private());
+
+        assert!(!WsChannel::Ticker.is_private());
+        assert!(!WsChannel::TickerV2.is_private());
+        assert!(!WsChannel::Trade.is_private());
+        assert!(!WsChannel::MarketLifecycleV2.is_private());
+        assert!(!WsChannel::Multivariate.is_private());
     }
 }

@@ -1,6 +1,6 @@
 mod common;
 
-use kalshi::{KalshiWsClient, WsChannel};
+use kalshi::{KalshiWsClient, WsChannel, WsDataMessage, WsMessage, WsSubscriptionParams};
 use std::time::Duration;
 
 // NOTE: Kalshi WebSocket requires authentication for ALL connections,
@@ -36,19 +36,26 @@ async fn test_ws_ticker_subscribe() {
     .expect("connection failed");
 
     let sub_id = ws
-        .subscribe(vec![WsChannel::Ticker], None)
+        .subscribe(WsSubscriptionParams {
+            channels: vec![WsChannel::Ticker],
+            ..Default::default()
+        })
         .await
         .expect("subscribe failed");
 
     assert!(sub_id > 0);
 
     // Read first message (should be subscribed confirmation or ticker data)
-    let msg = tokio::time::timeout(Duration::from_secs(10), async { ws.next_envelope().await })
+    let msg = tokio::time::timeout(Duration::from_secs(10), async { ws.next_message().await })
         .await
         .expect("timeout")
         .expect("receive failed");
 
-    assert!(msg.msg_type == "subscribed" || msg.msg_type == "ticker");
+    match msg {
+        WsMessage::Subscribed { .. } => {}
+        WsMessage::Data(WsDataMessage::Ticker { .. }) => {}
+        other => panic!("unexpected message: {:?}", other),
+    }
 }
 
 #[tokio::test]
@@ -64,19 +71,26 @@ async fn test_ws_ticker_v2_subscribe() {
     .expect("connection failed");
 
     let sub_id = ws
-        .subscribe(vec![WsChannel::TickerV2], None)
+        .subscribe(WsSubscriptionParams {
+            channels: vec![WsChannel::TickerV2],
+            ..Default::default()
+        })
         .await
         .expect("subscribe failed");
 
     assert!(sub_id > 0);
 
     // Read first message
-    let msg = tokio::time::timeout(Duration::from_secs(10), async { ws.next_envelope().await })
+    let msg = tokio::time::timeout(Duration::from_secs(10), async { ws.next_message().await })
         .await
         .expect("timeout")
         .expect("receive failed");
 
-    assert!(msg.msg_type == "subscribed" || msg.msg_type == "ticker_v2");
+    match msg {
+        WsMessage::Subscribed { .. } => {}
+        WsMessage::Data(WsDataMessage::TickerV2 { .. }) => {}
+        other => panic!("unexpected message: {:?}", other),
+    }
 }
 
 #[tokio::test]
@@ -96,7 +110,12 @@ async fn test_ws_private_channel_requires_auth_flag() {
     .expect("connection failed");
 
     // Subscribing to private channel on authenticated connection should succeed
-    let result = ws.subscribe(vec![WsChannel::Fill], None).await;
+    let result = ws
+        .subscribe(WsSubscriptionParams {
+            channels: vec![WsChannel::Fill],
+            ..Default::default()
+        })
+        .await;
 
     // Should succeed since we're authenticated
     assert!(result.is_ok());

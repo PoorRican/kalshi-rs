@@ -1,3 +1,4 @@
+use crate::types::ErrorResponse;
 use thiserror::Error;
 
 #[derive(Debug, Error)]
@@ -7,6 +8,14 @@ pub enum KalshiError {
 
     #[error("invalid parameters: {0}")]
     InvalidParams(String),
+
+    #[error("http error {status}")]
+    Http {
+        status: reqwest::StatusCode,
+        api_error: Option<ErrorResponse>,
+        raw_body: String,
+        request_id: Option<String>,
+    },
 
     #[error(transparent)]
     Reqwest(#[from] reqwest::Error),
@@ -29,4 +38,3 @@ pub enum KalshiError {
     #[error("websocket error: {0}")]
     Ws(String),
 }
-

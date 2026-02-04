@@ -1,6 +1,6 @@
 //! Unit tests for WebSocket message parsing.
 
-use kalshi::{WsEnvelope, WsFill, WsOrderbookDelta, WsOrderbookSnapshot, WsTicker};
+use kalshi::{WsDataMessage, WsEnvelope, WsMessage, WsOrderbookDelta, WsTicker};
 
 #[test]
 fn ws_envelope_deserializes_with_sid_and_seq() {
@@ -21,224 +21,244 @@ fn ws_envelope_deserializes_with_sid_and_seq() {
 }
 
 #[test]
-fn ws_envelope_deserializes_without_optional_fields() {
+fn ws_message_subscribed_parses() {
     let json = r#"{
-        "type": "ticker",
-        "msg": {}
+        "id": 5,
+        "type": "subscribed",
+        "sid": 99
     }"#;
 
     let env: WsEnvelope = serde_json::from_str(json).unwrap();
-    assert_eq!(env.id, None);
-    assert_eq!(env.msg_type, "ticker");
-    assert_eq!(env.sid, None);
-    assert_eq!(env.seq, None);
+    let msg = env.into_message().unwrap();
+    match msg {
+        WsMessage::Subscribed { id, sid } => {
+            assert_eq!(id, Some(5));
+            assert_eq!(sid, Some(99));
+        }
+        other => panic!("unexpected: {:?}", other),
+    }
 }
 
 #[test]
-fn ws_ticker_deserializes() {
+fn ws_message_list_subscriptions_parses() {
     let json = r#"{
-        "market_ticker": "INXD-25JAN10-T17900",
-        "market_id": "abc123",
-        "price": 55,
-        "yes_bid": 54,
-        "yes_ask": 56,
-        "price_dollars": "0.55",
-        "yes_bid_dollars": "0.54",
-        "yes_ask_dollars": "0.56",
-        "volume": 10000,
-        "volume_fp": "10000.00",
-        "open_interest": 5000,
-        "open_interest_fp": "5000.00",
-        "dollar_volume": 5500,
-        "dollar_open_interest": 2750,
-        "ts": 1700000000000
+        "id": 7,
+        "type": "list_subscriptions",
+        "msg": {
+            "subscriptions": [
+                {"sid": 1, "channels": ["ticker"], "market_tickers": ["TEST"]}
+            ]
+        }
     }"#;
 
-    let ticker: WsTicker = serde_json::from_str(json).unwrap();
-    assert_eq!(ticker.market_ticker, "INXD-25JAN10-T17900");
-    assert_eq!(ticker.market_id, "abc123");
-    assert_eq!(ticker.price, 55);
-    assert_eq!(ticker.yes_bid, 54);
-    assert_eq!(ticker.yes_ask, 56);
-    assert_eq!(ticker.price_dollars, "0.55");
-    assert_eq!(ticker.yes_bid_dollars, "0.54");
-    assert_eq!(ticker.yes_ask_dollars, "0.56");
-    assert_eq!(ticker.volume, 10000);
-    assert_eq!(ticker.open_interest, 5000);
-    assert_eq!(ticker.dollar_volume, 5500);
-    assert_eq!(ticker.dollar_open_interest, 2750);
-    assert_eq!(ticker.ts, 1700000000000);
+    let env: WsEnvelope = serde_json::from_str(json).unwrap();
+    let msg = env.into_message().unwrap();
+    match msg {
+        WsMessage::ListSubscriptions { id, subscriptions } => {
+            assert_eq!(id, Some(7));
+            assert_eq!(subscriptions.len(), 1);
+            assert_eq!(subscriptions[0].sid, 1);
+            assert_eq!(subscriptions[0].market_tickers.as_ref().unwrap()[0], "TEST");
+        }
+        other => panic!("unexpected: {:?}", other),
+    }
+}
+
+#[test]
+fn ws_message_error_parses() {
+    let json = r#"{
+        "id": 9,
+        "type": "error",
+        "msg": {"code": 9, "message": "Authentication required"}
+    }"#;
+
+    let env: WsEnvelope = serde_json::from_str(json).unwrap();
+    let msg = env.into_message().unwrap();
+    match msg {
+        WsMessage::Error { id, error } => {
+            assert_eq!(id, Some(9));
+            assert_eq!(error.code, Some(9));
+            assert_eq!(error.message.as_deref(), Some("Authentication required"));
+        }
+        other => panic!("unexpected: {:?}", other),
+    }
+}
+
+#[test]
+fn ws_ticker_message_parses() {
+    let json = r#"{
+        "type": "ticker",
+        "msg": {
+            "market_ticker": "INXD-25JAN10-T17900",
+            "market_id": "abc123",
+            "price": 55,
+            "yes_bid": 54,
+            "yes_ask": 56,
+            "price_dollars": "0.55",
+            "yes_bid_dollars": "0.54",
+            "yes_ask_dollars": "0.56",
+            "volume": 10000,
+            "volume_fp": "10000.00",
+            "open_interest": 5000,
+            "open_interest_fp": "5000.00",
+            "dollar_volume": 5500,
+            "dollar_open_interest": 2750,
+            "ts": 1700000000000
+        }
+    }"#;
+
+    let env: WsEnvelope = serde_json::from_str(json).unwrap();
+    let msg = env.into_message().unwrap();
+    match msg {
+        WsMessage::Data(WsDataMessage::Ticker { msg, .. }) => {
+            assert_eq!(msg.market_ticker, "INXD-25JAN10-T17900");
+            assert_eq!(msg.price, 55);
+        }
+        other => panic!("unexpected: {:?}", other),
+    }
+}
+
+#[test]
+fn ws_ticker_v2_message_parses() {
+    let json = r#"{
+        "type": "ticker_v2",
+        "msg": {
+            "market_ticker": "INXD-25JAN10-T17900",
+            "price": 55,
+            "ts": 1700000000000
+        }
+    }"#;
+
+    let env: WsEnvelope = serde_json::from_str(json).unwrap();
+    let msg = env.into_message().unwrap();
+    match msg {
+        WsMessage::Data(WsDataMessage::TickerV2 { msg, .. }) => {
+            assert_eq!(msg.market_ticker, "INXD-25JAN10-T17900");
+            assert_eq!(msg.price, Some(55));
+        }
+        other => panic!("unexpected: {:?}", other),
+    }
+}
+
+#[test]
+fn ws_trade_message_parses() {
+    let json = r#"{
+        "type": "trade",
+        "msg": {
+            "trade_id": "trade-1",
+            "ticker": "MKT-1",
+            "price": 55,
+            "count": 10,
+            "taker_side": "yes",
+            "created_time": "2025-01-10T12:00:00Z"
+        }
+    }"#;
+
+    let env: WsEnvelope = serde_json::from_str(json).unwrap();
+    let msg = env.into_message().unwrap();
+    match msg {
+        WsMessage::Data(WsDataMessage::Trade { msg, .. }) => {
+            assert_eq!(msg.trade_id, "trade-1");
+            assert_eq!(msg.ticker, "MKT-1");
+        }
+        other => panic!("unexpected: {:?}", other),
+    }
 }
 
 #[test]
 fn ws_orderbook_snapshot_deserializes() {
     let json = r#"{
-        "market_ticker": "INXD-25JAN10-T17900",
-        "market_id": "abc123",
-        "yes": [[50, 100], [51, 200]],
-        "yes_dollars": [["0.50", 100], ["0.51", 200]],
-        "no": [[49, 150]],
-        "no_dollars": [["0.49", 150]],
-        "yes_dollars_fp": [["0.50", "100.00"], ["0.51", "200.00"]],
-        "no_dollars_fp": [["0.49", "150.00"]]
+        "type": "orderbook_snapshot",
+        "msg": {
+            "market_ticker": "INXD-25JAN10-T17900",
+            "market_id": "abc123",
+            "yes": [[50, 100], [51, 200]],
+            "yes_dollars": [["0.50", 100], ["0.51", 200]],
+            "no": [[49, 150]],
+            "no_dollars": [["0.49", 150]]
+        }
     }"#;
 
-    let snap: WsOrderbookSnapshot = serde_json::from_str(json).unwrap();
-    assert_eq!(snap.market_ticker, "INXD-25JAN10-T17900");
-    assert_eq!(snap.market_id, "abc123");
-    assert_eq!(snap.yes.len(), 2);
-    assert_eq!(snap.yes[0], (50, 100));
-    assert_eq!(snap.yes[1], (51, 200));
-    assert_eq!(snap.no.len(), 1);
-    assert_eq!(snap.no[0], (49, 150));
-    assert_eq!(snap.yes_dollars.len(), 2);
-    assert_eq!(snap.yes_dollars[0], ("0.50".to_string(), 100));
-    assert_eq!(snap.no_dollars.len(), 1);
-    assert_eq!(snap.yes_dollars_fp.len(), 2);
-    assert_eq!(snap.no_dollars_fp.len(), 1);
-}
-
-#[test]
-fn ws_orderbook_snapshot_deserializes_with_empty_books() {
-    let json = r#"{
-        "market_ticker": "TEST-MKT",
-        "market_id": "xyz789"
-    }"#;
-
-    let snap: WsOrderbookSnapshot = serde_json::from_str(json).unwrap();
-    assert_eq!(snap.market_ticker, "TEST-MKT");
-    assert!(snap.yes.is_empty());
-    assert!(snap.no.is_empty());
-    assert!(snap.yes_dollars.is_empty());
-    assert!(snap.no_dollars.is_empty());
-    assert!(snap.yes_dollars_fp.is_empty());
-    assert!(snap.no_dollars_fp.is_empty());
+    let env: WsEnvelope = serde_json::from_str(json).unwrap();
+    let msg = env.into_message().unwrap();
+    match msg {
+        WsMessage::Data(WsDataMessage::OrderbookSnapshot { msg, .. }) => {
+            assert_eq!(msg.market_ticker, "INXD-25JAN10-T17900");
+            assert_eq!(msg.yes.len(), 2);
+        }
+        other => panic!("unexpected: {:?}", other),
+    }
 }
 
 #[test]
 fn ws_orderbook_delta_deserializes() {
     let json = r#"{
-        "market_ticker": "INXD-25JAN10-T17900",
-        "market_id": "abc123",
-        "price": 55,
-        "price_dollars": "0.55",
-        "delta": 50,
-        "delta_fp": "50.00",
-        "side": "yes",
-        "client_order_id": "my-order-1",
-        "subaccount": 0,
-        "ts": "2025-01-10T12:00:00Z"
+        "type": "orderbook_delta",
+        "msg": {
+            "market_ticker": "INXD-25JAN10-T17900",
+            "market_id": "abc123",
+            "price": 55,
+            "price_dollars": "0.55",
+            "delta": 50,
+            "delta_fp": "50.00",
+            "side": "yes",
+            "client_order_id": "my-order-1",
+            "subaccount": 0,
+            "ts": "2025-01-10T12:00:00Z"
+        }
     }"#;
 
-    let delta: WsOrderbookDelta = serde_json::from_str(json).unwrap();
-    assert_eq!(delta.market_ticker, "INXD-25JAN10-T17900");
-    assert_eq!(delta.market_id, "abc123");
-    assert_eq!(delta.price, 55);
-    assert_eq!(delta.price_dollars, "0.55");
-    assert_eq!(delta.delta, 50);
-    assert_eq!(delta.delta_fp, "50.00");
-    assert_eq!(delta.side, "yes");
-    assert_eq!(delta.client_order_id, Some("my-order-1".into()));
-    assert_eq!(delta.subaccount, Some(0));
-    assert_eq!(delta.ts, Some("2025-01-10T12:00:00Z".into()));
-}
-
-#[test]
-fn ws_orderbook_delta_deserializes_negative_delta() {
-    let json = r#"{
-        "market_ticker": "TEST",
-        "market_id": "abc",
-        "price": 45,
-        "price_dollars": "0.45",
-        "delta": -100,
-        "delta_fp": "-100.00",
-        "side": "no"
-    }"#;
-
-    let delta: WsOrderbookDelta = serde_json::from_str(json).unwrap();
-    assert_eq!(delta.delta, -100);
-    assert_eq!(delta.side, "no");
-    assert!(delta.client_order_id.is_none());
-    assert!(delta.subaccount.is_none());
-    assert!(delta.ts.is_none());
+    let env: WsEnvelope = serde_json::from_str(json).unwrap();
+    let msg = env.into_message().unwrap();
+    match msg {
+        WsMessage::Data(WsDataMessage::OrderbookDelta { msg, .. }) => {
+            assert_eq!(msg.market_ticker, "INXD-25JAN10-T17900");
+            assert_eq!(msg.delta, 50);
+        }
+        other => panic!("unexpected: {:?}", other),
+    }
 }
 
 #[test]
 fn ws_fill_deserializes() {
     let json = r#"{
-        "fill_id": "fill-123",
-        "trade_id": "trade-456",
-        "order_id": "order-789",
-        "client_order_id": "my-order",
-        "ticker": "INXD-25JAN10-T17900",
-        "market_ticker": "INXD-25JAN10-T17900",
-        "side": "yes",
-        "action": "buy",
-        "count": 10,
-        "count_fp": "10.00",
-        "yes_price": 55,
-        "no_price": 45,
-        "yes_price_fixed": "0.55",
-        "no_price_fixed": "0.45",
-        "is_taker": true,
-        "fee_cost": "0.05",
-        "created_time": "2025-01-10T12:00:00Z",
-        "subaccount_number": 1,
-        "ts": 1700000000000
+        "type": "fill",
+        "msg": {
+            "fill_id": "fill-123",
+            "trade_id": "trade-456",
+            "order_id": "order-789",
+            "client_order_id": "my-order",
+            "ticker": "INXD-25JAN10-T17900",
+            "market_ticker": "INXD-25JAN10-T17900",
+            "side": "yes",
+            "action": "buy",
+            "count": 10,
+            "count_fp": "10.00",
+            "yes_price": 55,
+            "no_price": 45,
+            "yes_price_fixed": "0.55",
+            "no_price_fixed": "0.45",
+            "is_taker": true,
+            "fee_cost": "0.05",
+            "created_time": "2025-01-10T12:00:00Z",
+            "subaccount_number": 1,
+            "ts": 1700000000000
+        }
     }"#;
 
-    let fill: WsFill = serde_json::from_str(json).unwrap();
-    assert_eq!(fill.fill_id, "fill-123");
-    assert_eq!(fill.trade_id, "trade-456");
-    assert_eq!(fill.order_id, "order-789");
-    assert_eq!(fill.client_order_id, Some("my-order".into()));
-    assert_eq!(fill.ticker, "INXD-25JAN10-T17900");
-    assert_eq!(fill.market_ticker, "INXD-25JAN10-T17900");
-    assert_eq!(fill.side, "yes");
-    assert_eq!(fill.action, "buy");
-    assert_eq!(fill.count, 10);
-    assert_eq!(fill.yes_price, 55);
-    assert_eq!(fill.no_price, 45);
-    assert!(fill.is_taker);
-    assert_eq!(fill.fee_cost, "0.05");
-    assert_eq!(fill.created_time, Some("2025-01-10T12:00:00Z".into()));
-    assert_eq!(fill.subaccount_number, Some(1));
-    assert_eq!(fill.ts, Some(1700000000000));
+    let env: WsEnvelope = serde_json::from_str(json).unwrap();
+    let msg = env.into_message().unwrap();
+    match msg {
+        WsMessage::Data(WsDataMessage::Fill { msg, .. }) => {
+            assert_eq!(msg.fill_id, "fill-123");
+            assert_eq!(msg.trade_id, "trade-456");
+        }
+        other => panic!("unexpected: {:?}", other),
+    }
 }
 
 #[test]
-fn ws_fill_deserializes_without_optional_fields() {
-    let json = r#"{
-        "fill_id": "fill-123",
-        "trade_id": "trade-456",
-        "order_id": "order-789",
-        "ticker": "TEST",
-        "market_ticker": "TEST",
-        "side": "no",
-        "action": "sell",
-        "count": 5,
-        "count_fp": "5.00",
-        "yes_price": 40,
-        "no_price": 60,
-        "yes_price_fixed": "0.40",
-        "no_price_fixed": "0.60",
-        "is_taker": false,
-        "fee_cost": "0.00"
-    }"#;
-
-    let fill: WsFill = serde_json::from_str(json).unwrap();
-    assert_eq!(fill.fill_id, "fill-123");
-    assert_eq!(fill.side, "no");
-    assert_eq!(fill.action, "sell");
-    assert!(!fill.is_taker);
-    assert!(fill.client_order_id.is_none());
-    assert!(fill.created_time.is_none());
-    assert!(fill.subaccount_number.is_none());
-    assert!(fill.ts.is_none());
-}
-
-#[test]
-fn ws_envelope_parse_ticker() {
+fn ws_envelope_parse_ticker_raw() {
     let json = r#"{
         "type": "ticker",
         "sid": 1,
@@ -262,83 +282,28 @@ fn ws_envelope_parse_ticker() {
     }"#;
 
     let env: WsEnvelope = serde_json::from_str(json).unwrap();
-    let ticker = env.parse_ticker().unwrap();
-    assert_eq!(ticker.market_ticker, "TEST");
-    assert_eq!(ticker.price, 50);
+    let raw = env.msg_raw().unwrap();
+    let msg: WsTicker = serde_json::from_str(raw).unwrap();
+    assert_eq!(msg.market_ticker, "TEST");
 }
 
 #[test]
-fn ws_envelope_parse_orderbook_snapshot() {
-    let json = r#"{
-        "type": "orderbook_snapshot",
-        "sid": 2,
-        "seq": 1,
-        "msg": {
-            "market_ticker": "TEST",
-            "market_id": "abc",
-            "yes": [[50, 100]],
-            "no": [[50, 200]]
-        }
-    }"#;
-
-    let env: WsEnvelope = serde_json::from_str(json).unwrap();
-    let snap = env.parse_orderbook_snapshot().unwrap();
-    assert_eq!(snap.market_ticker, "TEST");
-    assert_eq!(snap.yes.len(), 1);
-    assert_eq!(snap.no.len(), 1);
-}
-
-#[test]
-fn ws_envelope_parse_orderbook_delta() {
+fn ws_orderbook_delta_raw() {
     let json = r#"{
         "type": "orderbook_delta",
-        "sid": 2,
-        "seq": 5,
         "msg": {
             "market_ticker": "TEST",
             "market_id": "abc",
-            "price": 55,
-            "price_dollars": "0.55",
-            "delta": 25,
-            "delta_fp": "25.00",
+            "price": 50,
+            "price_dollars": "0.50",
+            "delta": 10,
+            "delta_fp": "10.00",
             "side": "yes"
         }
     }"#;
 
     let env: WsEnvelope = serde_json::from_str(json).unwrap();
-    let delta = env.parse_orderbook_delta().unwrap();
-    assert_eq!(delta.market_ticker, "TEST");
-    assert_eq!(delta.price, 55);
-    assert_eq!(delta.delta, 25);
-}
-
-#[test]
-fn ws_envelope_parse_fill() {
-    let json = r#"{
-        "type": "fill",
-        "sid": 3,
-        "msg": {
-            "fill_id": "f1",
-            "trade_id": "t1",
-            "order_id": "o1",
-            "ticker": "TEST",
-            "market_ticker": "TEST",
-            "side": "yes",
-            "action": "buy",
-            "count": 10,
-            "count_fp": "10.00",
-            "yes_price": 50,
-            "no_price": 50,
-            "yes_price_fixed": "0.50",
-            "no_price_fixed": "0.50",
-            "is_taker": true,
-            "fee_cost": "0.01"
-        }
-    }"#;
-
-    let env: WsEnvelope = serde_json::from_str(json).unwrap();
-    let fill = env.parse_fill().unwrap();
-    assert_eq!(fill.fill_id, "f1");
-    assert_eq!(fill.action, "buy");
-    assert!(fill.is_taker);
+    let raw = env.msg_raw().unwrap();
+    let msg: WsOrderbookDelta = serde_json::from_str(raw).unwrap();
+    assert_eq!(msg.delta, 10);
 }

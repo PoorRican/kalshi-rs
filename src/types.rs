@@ -1,13 +1,93 @@
-use serde::{Serialize, Serializer};
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use serde_json::Value;
 use std::fmt;
+
+/// Serialize Option<Vec<T>> as a single comma-separated query param.
+pub fn serialize_csv_opt<T, S>(value: &Option<Vec<T>>, serializer: S) -> Result<S::Ok, S::Error>
+where
+    T: fmt::Display,
+    S: Serializer,
+{
+    match value {
+        None => serializer.serialize_none(),
+        Some(items) => {
+            let s = items
+                .iter()
+                .map(|x| x.to_string())
+                .collect::<Vec<_>>()
+                .join(",");
+            serializer.serialize_str(&s)
+        }
+    }
+}
+
+/// Fixed-point dollar string (e.g. "0.5600").
+pub type FixedPointDollars = String;
+
+/// Fixed-point contract count string (e.g. "10.00").
+pub type FixedPointCount = String;
+
+/// Typed wrapper for arbitrary JSON payloads.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct AnyJson(pub Value);
+
+impl AnyJson {
+    pub fn as_value(&self) -> &Value {
+        &self.0
+    }
+}
+
+impl From<Value> for AnyJson {
+    fn from(value: Value) -> Self {
+        Self(value)
+    }
+}
+
+impl Serialize for AnyJson {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        self.0.serialize(serializer)
+    }
+}
+
+impl<'de> Deserialize<'de> for AnyJson {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        Ok(Self(Value::deserialize(deserializer)?))
+    }
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct ErrorResponse {
+    #[serde(default)]
+    pub code: Option<String>,
+    #[serde(default)]
+    pub message: Option<String>,
+    #[serde(default)]
+    pub details: Option<AnyJson>,
+    #[serde(default)]
+    pub service: Option<String>,
+}
+
+/// --- Fee Type ---
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum FeeType {
+    Quadratic,
+    Flat,
+    #[serde(other)]
+    Unknown,
+}
 
 /// --- Event Status ---
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum EventStatus {
     Open,
     Closed,
     Settled,
+    #[serde(other)]
+    Unknown,
 }
 
 impl EventStatus {
@@ -16,6 +96,7 @@ impl EventStatus {
             EventStatus::Open => "open",
             EventStatus::Closed => "closed",
             EventStatus::Settled => "settled",
+            EventStatus::Unknown => "unknown",
         }
     }
 }
@@ -121,11 +202,14 @@ impl fmt::Display for PositionCountFilter {
 
 /// --- Order Status ---
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
 pub enum OrderStatus {
     Resting,
     Canceled,
     Executed,
+    #[serde(other)]
+    Unknown,
 }
 
 impl OrderStatus {
@@ -134,6 +218,7 @@ impl OrderStatus {
             OrderStatus::Resting => "resting",
             OrderStatus::Canceled => "canceled",
             OrderStatus::Executed => "executed",
+            OrderStatus::Unknown => "unknown",
         }
     }
 }
@@ -152,10 +237,13 @@ impl Serialize for OrderStatus {
 
 /// --- Yes/No (Side) ---
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum YesNo {
     Yes,
     No,
+    #[serde(other)]
+    Unknown,
 }
 
 impl Default for YesNo {
@@ -169,6 +257,7 @@ impl YesNo {
         match self {
             YesNo::Yes => "yes",
             YesNo::No => "no",
+            YesNo::Unknown => "unknown",
         }
     }
 }
@@ -187,10 +276,13 @@ impl Serialize for YesNo {
 
 /// --- Buy/Sell (Action) ---
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum BuySell {
     Buy,
     Sell,
+    #[serde(other)]
+    Unknown,
 }
 
 impl Default for BuySell {
@@ -204,6 +296,7 @@ impl BuySell {
         match self {
             BuySell::Buy => "buy",
             BuySell::Sell => "sell",
+            BuySell::Unknown => "unknown",
         }
     }
 }
@@ -222,10 +315,13 @@ impl Serialize for BuySell {
 
 /// --- Order Type ---
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum OrderType {
     Limit,
     Market,
+    #[serde(other)]
+    Unknown,
 }
 
 impl OrderType {
@@ -233,6 +329,7 @@ impl OrderType {
         match self {
             OrderType::Limit => "limit",
             OrderType::Market => "market",
+            OrderType::Unknown => "unknown",
         }
     }
 }
@@ -251,11 +348,14 @@ impl Serialize for OrderType {
 
 /// --- Time In Force ---
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum TimeInForce {
     FillOrKill,
     GoodTillCanceled,
     ImmediateOrCancel,
+    #[serde(other)]
+    Unknown,
 }
 
 impl TimeInForce {
@@ -264,6 +364,7 @@ impl TimeInForce {
             TimeInForce::FillOrKill => "fill_or_kill",
             TimeInForce::GoodTillCanceled => "good_till_canceled",
             TimeInForce::ImmediateOrCancel => "immediate_or_cancel",
+            TimeInForce::Unknown => "unknown",
         }
     }
 }
@@ -282,10 +383,13 @@ impl Serialize for TimeInForce {
 
 /// --- Self Trade Prevention Type ---
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum SelfTradePreventionType {
     TakerAtCross,
     Maker,
+    #[serde(other)]
+    Unknown,
 }
 
 impl SelfTradePreventionType {
@@ -293,6 +397,7 @@ impl SelfTradePreventionType {
         match self {
             SelfTradePreventionType::TakerAtCross => "taker_at_cross",
             SelfTradePreventionType::Maker => "maker",
+            SelfTradePreventionType::Unknown => "unknown",
         }
     }
 }
@@ -304,6 +409,39 @@ impl fmt::Display for SelfTradePreventionType {
 }
 
 impl Serialize for SelfTradePreventionType {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_str(self.as_str())
+    }
+}
+
+/// --- Trade Taker Side ---
+
+#[derive(Debug, Clone, Copy, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TradeTakerSide {
+    Yes,
+    No,
+    #[serde(other)]
+    Unknown,
+}
+
+impl TradeTakerSide {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            TradeTakerSide::Yes => "yes",
+            TradeTakerSide::No => "no",
+            TradeTakerSide::Unknown => "unknown",
+        }
+    }
+}
+
+impl fmt::Display for TradeTakerSide {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+impl Serialize for TradeTakerSide {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         serializer.serialize_str(self.as_str())
     }
