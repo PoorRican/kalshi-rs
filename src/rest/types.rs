@@ -1,11 +1,11 @@
 use crate::error::KalshiError;
 use crate::types::{
-    deserialize_null_as_empty_vec, deserialize_string_or_number, serialize_csv_opt, AnyJson,
-    BuySell, EventStatus, FeeType, FixedPointCount, FixedPointDollars, MarketStatus, MveFilter,
-    OrderStatus, OrderType, PositionCountFilter, SelfTradePreventionType, TimeInForce,
-    TradeTakerSide, YesNo,
+    deserialize_null_as_empty_vec, deserialize_string_or_number, serialize_csv_opt, BuySell,
+    EventStatus, FeeType, FixedPointCount, FixedPointDollars, MarketStatus, MveFilter, OrderStatus,
+    OrderType, PositionCountFilter, SelfTradePreventionType, TimeInForce, TradeTakerSide, YesNo,
 };
 use serde::{Deserialize, Serialize};
+use serde_json::{Map, Value};
 
 /// --- Series ---
 
@@ -15,6 +15,28 @@ pub struct SettlementSource {
     pub name: Option<String>,
     #[serde(default)]
     pub url: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct MarketMetadata {
+    pub market_ticker: String,
+    pub image_url: String,
+    pub color_code: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct EventMetadata {
+    pub image_url: String,
+    #[serde(default)]
+    pub featured_image_url: Option<String>,
+    #[serde(default, deserialize_with = "deserialize_null_as_empty_vec")]
+    pub market_details: Vec<MarketMetadata>,
+    #[serde(default, deserialize_with = "deserialize_null_as_empty_vec")]
+    pub settlement_sources: Vec<SettlementSource>,
+    #[serde(default)]
+    pub competition: Option<String>,
+    #[serde(default)]
+    pub competition_scope: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -47,7 +69,7 @@ pub struct Series {
     #[serde(default, deserialize_with = "deserialize_null_as_empty_vec")]
     pub additional_prohibitions: Vec<String>,
     #[serde(default)]
-    pub product_metadata: Option<AnyJson>,
+    pub product_metadata: Option<Map<String, Value>>,
     #[serde(default)]
     pub volume: Option<i64>,
     #[serde(default)]
@@ -173,7 +195,9 @@ pub struct EventData {
     #[serde(default)]
     pub milestones: Option<Vec<Milestone>>,
     #[serde(default)]
-    pub custom_strike: Option<AnyJson>,
+    pub custom_strike: Option<Map<String, Value>>,
+    #[serde(default)]
+    pub product_metadata: Option<EventMetadata>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -225,12 +249,12 @@ pub struct MveSelectedLeg {
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct PriceRange {
-    #[serde(default)]
-    pub min_price: Option<String>,
-    #[serde(default)]
-    pub max_price: Option<String>,
-    #[serde(default)]
-    pub increment: Option<String>,
+    #[serde(alias = "min_price")]
+    pub start: String,
+    #[serde(alias = "max_price")]
+    pub end: String,
+    #[serde(alias = "increment")]
+    pub step: String,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -347,11 +371,11 @@ pub struct Market {
     #[serde(default)]
     pub liquidity_fp: Option<String>,
     #[serde(default)]
-    pub custom_strike: Option<AnyJson>,
+    pub custom_strike: Option<Map<String, Value>>,
     #[serde(default)]
     pub mve_selected_legs: Option<Vec<MveSelectedLeg>>,
     #[serde(default)]
-    pub price_ranges: Option<Vec<AnyJson>>,
+    pub price_ranges: Option<Vec<PriceRange>>,
 }
 
 /// GET /markets query params and constraints
