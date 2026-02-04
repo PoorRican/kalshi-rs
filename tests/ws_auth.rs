@@ -1,6 +1,9 @@
 mod common;
 
-use kalshi::{GetMarketsParams, KalshiRestClient, KalshiWsClient, MarketStatus, WsChannel};
+use kalshi::{
+    GetMarketsParams, KalshiRestClient, KalshiWsClient, MarketStatus, WsChannel, WsDataMessage,
+    WsMessage, WsSubscriptionParams,
+};
 use std::time::Duration;
 
 #[tokio::test]
@@ -44,10 +47,7 @@ async fn test_ws_orderbook_delta_subscribe() {
         return;
     }
 
-    let market_ticker = markets_resp.markets[0]["ticker"]
-        .as_str()
-        .expect("ticker should be a string")
-        .to_string();
+    let market_ticker = markets_resp.markets[0].ticker.clone();
 
     // Connect with auth
     let mut ws = tokio::time::timeout(common::TEST_TIMEOUT, async {
@@ -59,27 +59,28 @@ async fn test_ws_orderbook_delta_subscribe() {
 
     // Subscribe to OrderbookDelta (private channel) with market ticker
     let sub_id = ws
-        .subscribe(
-            vec![WsChannel::OrderbookDelta],
-            Some(vec![market_ticker]),
-        )
+        .subscribe(WsSubscriptionParams {
+            channels: vec![WsChannel::OrderbookDelta],
+            market_tickers: Some(vec![market_ticker]),
+            ..Default::default()
+        })
         .await
         .expect("subscribe failed");
 
     assert!(sub_id > 0);
 
     // Read first message
-    let msg = tokio::time::timeout(Duration::from_secs(10), async { ws.next_envelope().await })
+    let msg = tokio::time::timeout(Duration::from_secs(10), async { ws.next_message().await })
         .await
         .expect("timeout")
         .expect("receive failed");
 
-    // Should be subscribed confirmation or orderbook_delta data
-    assert!(
-        msg.msg_type == "subscribed"
-            || msg.msg_type == "orderbook_delta"
-            || msg.msg_type == "orderbook_snapshot"
-    );
+    match msg {
+        WsMessage::Subscribed { .. } => {}
+        WsMessage::Data(WsDataMessage::OrderbookDelta { .. }) => {}
+        WsMessage::Data(WsDataMessage::OrderbookSnapshot { .. }) => {}
+        other => panic!("unexpected message: {:?}", other),
+    }
 }
 
 #[tokio::test]
@@ -96,18 +97,24 @@ async fn test_ws_fill_subscribe() {
 
     // Subscribe to Fill channel (private, no market ticker needed)
     let sub_id = ws
-        .subscribe(vec![WsChannel::Fill], None)
+        .subscribe(WsSubscriptionParams {
+            channels: vec![WsChannel::Fill],
+            ..Default::default()
+        })
         .await
         .expect("subscribe failed");
 
     assert!(sub_id > 0);
 
     // Read first message (should be subscribed confirmation)
-    let msg = tokio::time::timeout(Duration::from_secs(10), async { ws.next_envelope().await })
+    let msg = tokio::time::timeout(Duration::from_secs(10), async { ws.next_message().await })
         .await
         .expect("timeout")
         .expect("receive failed");
 
-    // Fill channel may not send data until there's activity, so expect subscribed
-    assert!(msg.msg_type == "subscribed" || msg.msg_type == "fill");
+    match msg {
+        WsMessage::Subscribed { .. } => {}
+        WsMessage::Data(WsDataMessage::Fill { .. }) => {}
+        other => panic!("unexpected message: {:?}", other),
+    }
 }

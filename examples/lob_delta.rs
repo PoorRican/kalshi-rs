@@ -2,7 +2,7 @@
 ///
 /// This channel is explicitly called out in the docs as being authenticated
 
-use kalshi::{KalshiAuth, KalshiEnvironment, KalshiWsClient, WsChannel};
+use kalshi::{KalshiAuth, KalshiEnvironment, KalshiWsClient, WsChannel, WsSubscriptionParams};
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -15,15 +15,15 @@ async fn main() -> anyhow::Result<()> {
 
     let mut ws = KalshiWsClient::connect_authenticated(env, auth).await?;
 
-    ws.subscribe(
-        vec![WsChannel::OrderbookDelta],
-        Some(vec!["SOME_MARKET_TICKER".to_string()]),
-    )
+    ws.subscribe(WsSubscriptionParams {
+        channels: vec![WsChannel::OrderbookDelta],
+        market_tickers: Some(vec!["SOME_MARKET_TICKER".to_string()]),
+        ..Default::default()
+    })
     .await?;
 
     loop {
-        let msg = ws.next_envelope().await?;
+        let msg = ws.next_message().await?;
         println!("{:?}", msg);
     }
 }
-

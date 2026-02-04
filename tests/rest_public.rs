@@ -63,18 +63,16 @@ async fn test_get_event_by_ticker() {
         return;
     }
 
-    let event_ticker = events_resp.events[0]["event_ticker"]
-        .as_str()
-        .expect("event_ticker should be a string");
+    let event_ticker = events_resp.events[0].event_ticker.clone();
 
     let resp = tokio::time::timeout(common::TEST_TIMEOUT, async {
-        client.get_event(event_ticker, Some(true)).await
+        client.get_event(&event_ticker, Some(true)).await
     })
     .await
     .expect("timeout")
     .expect("request failed");
 
-    assert!(resp.event.is_object());
+    assert_eq!(resp.event.event_ticker, event_ticker);
 }
 
 #[tokio::test]
@@ -119,16 +117,14 @@ async fn test_get_market_by_ticker() {
         return;
     }
 
-    let market_ticker = markets_resp.markets[0]["ticker"]
-        .as_str()
-        .expect("ticker should be a string");
+    let market_ticker = markets_resp.markets[0].ticker.clone();
 
     let resp = tokio::time::timeout(common::TEST_TIMEOUT, async {
-        client.get_market(market_ticker).await
+        client.get_market(&market_ticker).await
     })
     .await
     .expect("timeout")
     .expect("request failed");
 
-    assert!(resp.market.is_object());
+    assert_eq!(resp.market.ticker, market_ticker);
 }

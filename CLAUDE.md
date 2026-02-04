@@ -19,7 +19,8 @@ This adapter must be as performant as possible. Every design decision should con
 - `auth.rs` - RSA-PSS SHA256 signing. Message format: `{timestamp_ms}{METHOD}{path_without_query}`
 - `rest.rs` - HTTP client via reqwest. Public endpoints need no auth, `/portfolio/*` endpoints require signed headers
 - `ws.rs` - WebSocket via tokio-tungstenite. Split read/write streams for concurrent operations. Private channels (OrderbookDelta, Fill, etc.) require authenticated connection
-- `types.rs` - Request/response types. Uses `serde_json::Value` for market data responses to decouple from schema changes
+- `ws_manager.rs` - High-level WebSocket session with reconnect + resubscribe logic
+- `types.rs` - Request/response types. Fully typed models (no `serde_json::Value` in responses)
 - `env.rs` - Demo vs Production base URLs
 
 ## Examples

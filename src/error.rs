@@ -1,5 +1,7 @@
 use thiserror::Error;
 
+use crate::types::ErrorResponse;
+
 #[derive(Debug, Error)]
 pub enum KalshiError {
     #[error("authentication required: {0}")]
@@ -28,5 +30,12 @@ pub enum KalshiError {
 
     #[error("websocket error: {0}")]
     Ws(String),
-}
 
+    #[error("http error {status}: {raw_body}")]
+    Http {
+        status: reqwest::StatusCode,
+        api_error: Option<ErrorResponse>,
+        raw_body: String,
+        request_id: Option<String>,
+    },
+}

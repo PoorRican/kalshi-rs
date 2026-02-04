@@ -53,10 +53,7 @@ impl KalshiAuth {
     /// message = timestamp + METHOD + path_without_query
     /// signature = RSA-PSS(SHA256), base64 encoded :contentReference[oaicite:18]{index=18}
     pub fn sign(&self, timestamp_ms: &str, method: &str, path: &str) -> Result<String, KalshiError> {
-        let method = method.to_uppercase();
-        let path_without_query = path.split('?').next().unwrap_or(path);
-
-        let message = format!("{timestamp_ms}{method}{path_without_query}");
+        let message = Self::signing_message(timestamp_ms, method, path);
         let message_bytes = message.as_bytes();
 
         // RSA-PSS is randomized; use OS RNG.
@@ -68,6 +65,13 @@ impl KalshiAuth {
             .sign_with_rng(&mut rng, message_bytes);
 
         Ok(STANDARD.encode(signature.to_bytes()))
+    }
+
+    /// Build the canonical signing message (timestamp + METHOD + path_without_query).
+    pub fn signing_message(timestamp_ms: &str, method: &str, path: &str) -> String {
+        let method = method.to_uppercase();
+        let path_without_query = path.split('?').next().unwrap_or(path);
+        format!("{timestamp_ms}{method}{path_without_query}")
     }
 
     /// Build the three headers required by Kalshi authenticated endpoints. :contentReference[oaicite:20]{index=20}
@@ -83,3 +87,17 @@ impl KalshiAuth {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::KalshiAuth;
+
+    #[test]
+    fn signing_message_strips_query() {
+        let msg = KalshiAuth::signing_message(
+            "1700000000000",
+            "get",
+            "/trade-api/v2/markets?limit=10&cursor=abc",
+        );
+        assert_eq!(msg, "1700000000000GET/trade-api/v2/markets");
+    }
+}
