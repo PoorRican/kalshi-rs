@@ -125,7 +125,7 @@ pub struct ErrorResponse {
     #[serde(default)]
     pub message: Option<String>,
     #[serde(default)]
-    pub details: Option<AnyJson>,
+    pub details: Option<String>,
     #[serde(default)]
     pub service: Option<String>,
 }
