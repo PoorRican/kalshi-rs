@@ -115,13 +115,16 @@ impl Serialize for EventStatus {
 
 /// --- Market Status ---
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum MarketStatus {
     Unopened,
     Open,
     Paused,
     Closed,
     Settled,
+    #[serde(other)]
+    Unknown,
 }
 
 impl MarketStatus {
@@ -132,6 +135,7 @@ impl MarketStatus {
             MarketStatus::Paused => "paused",
             MarketStatus::Closed => "closed",
             MarketStatus::Settled => "settled",
+            MarketStatus::Unknown => "unknown",
         }
     }
 }
@@ -444,5 +448,22 @@ impl fmt::Display for TradeTakerSide {
 impl Serialize for TradeTakerSide {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         serializer.serialize_str(self.as_str())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn market_status_deserialize_known() {
+        let status: MarketStatus = serde_json::from_str("\"open\"").unwrap();
+        assert!(matches!(status, MarketStatus::Open));
+    }
+
+    #[test]
+    fn market_status_deserialize_unknown() {
+        let status: MarketStatus = serde_json::from_str("\"mystery\"").unwrap();
+        assert!(matches!(status, MarketStatus::Unknown));
     }
 }
