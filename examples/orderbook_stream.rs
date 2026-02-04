@@ -37,7 +37,7 @@ async fn main() -> anyhow::Result<()> {
     let mut cursor: Option<String> = None;
     let mut target_market: Option<serde_json::Value> = None;
 
-    for page in 1..=MAX_PAGES {
+    for _page in 1..=MAX_PAGES {
         let resp = client
             .get_markets(GetMarketsParams {
                 limit: Some(100),
@@ -48,7 +48,7 @@ async fn main() -> anyhow::Result<()> {
             })
             .await?;
 
-        println!("Page {}: {} markets", page, resp.markets.len());
+        print!(".");
 
         if let Some(m) = resp.markets.into_iter().find(|m| get_volume(m) > MIN_VOLUME_24H) {
             target_market = Some(m);
@@ -63,6 +63,8 @@ async fn main() -> anyhow::Result<()> {
         // Rate limit: 100ms between requests
         sleep(Duration::from_millis(100)).await;
     }
+
+    println!();
 
     let target_market = match target_market {
         Some(m) => m,
@@ -117,22 +119,18 @@ async fn main() -> anyhow::Result<()> {
 
         match envelope.msg_type.as_str() {
             "orderbook_snapshot" => {
-                match envelope.parse_orderbook_snapshot() {
-                    Ok(snap) => println!(
-                        "[SNAPSHOT] {} | yes={} no={} | seq={:?}",
-                        snap.market_ticker, snap.yes.len(), snap.no.len(), envelope.seq
-                    ),
-                    Err(e) => println!("[SNAPSHOT parse error] {}\nRaw: {:?}", e, envelope.msg),
-                }
+                let snap = envelope.parse_orderbook_snapshot()?;
+                println!(
+                    "[SNAPSHOT] {} | yes={} no={} | seq={:?}",
+                    snap.market_ticker, snap.yes.len(), snap.no.len(), envelope.seq
+                );
             }
             "orderbook_delta" => {
-                match envelope.parse_orderbook_delta() {
-                    Ok(delta) => println!(
-                        "[DELTA] {} | {}@{} {:+} | seq={:?}",
-                        delta.market_ticker, delta.side, delta.price, delta.delta, envelope.seq
-                    ),
-                    Err(e) => println!("[DELTA parse error] {}\nRaw: {:?}", e, envelope.msg),
-                }
+                let delta = envelope.parse_orderbook_delta()?;
+                println!(
+                    "[DELTA] {} | {}@{} {:+} | seq={:?}",
+                    delta.market_ticker, delta.side, delta.price, delta.delta, envelope.seq
+                );
             }
             "subscribed" => println!("[SUBSCRIBED] sid={:?}", envelope.sid),
             "error" => println!("[ERROR] {:?}", envelope.msg),
