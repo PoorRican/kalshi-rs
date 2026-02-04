@@ -138,7 +138,9 @@ async fn test_get_subaccount_balances() {
     .expect("timeout")
     .expect("request failed");
 
-    assert!(resp.subaccount_balances.len() >= 0);
+    if let Some(first) = resp.subaccount_balances.first() {
+        assert!(first.updated_ts > 0);
+    }
 }
 
 #[tokio::test]

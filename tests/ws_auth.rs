@@ -46,7 +46,6 @@ async fn test_ws_orderbook_delta_subscribe() {
         // No open markets, skip test
         return;
     }
-
     let market_ticker = markets_resp.markets[0].ticker.clone();
 
     // Connect with auth

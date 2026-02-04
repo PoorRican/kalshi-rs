@@ -237,7 +237,9 @@ async fn test_get_exchange_status() {
     .expect("timeout")
     .expect("request failed");
 
-    assert!(resp.exchange_active || !resp.exchange_active);
+    if let Some(ts) = resp.exchange_estimated_resume_time.as_deref() {
+        assert!(!ts.is_empty());
+    }
 }
 
 #[tokio::test]
@@ -250,7 +252,9 @@ async fn test_get_exchange_announcements() {
     .expect("timeout")
     .expect("request failed");
 
-    assert!(resp.announcements.len() >= 0);
+    if let Some(first) = resp.announcements.first() {
+        assert!(!first.message.is_empty());
+    }
 }
 
 #[tokio::test]
@@ -263,7 +267,10 @@ async fn test_get_exchange_schedule() {
     .expect("timeout")
     .expect("request failed");
 
-    assert!(resp.schedule.standard_hours.len() >= 0);
+    if let Some(first) = resp.schedule.standard_hours.first() {
+        assert!(!first.start_time.is_empty());
+        assert!(!first.end_time.is_empty());
+    }
 }
 
 #[tokio::test]
@@ -291,5 +298,7 @@ async fn test_get_series_fee_changes() {
     .expect("timeout")
     .expect("request failed");
 
-    assert!(resp.series_fee_change_arr.len() >= 0);
+    if let Some(first) = resp.series_fee_change_arr.first() {
+        assert!(first.scheduled_ts > 0);
+    }
 }

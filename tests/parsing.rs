@@ -512,7 +512,7 @@ fn get_subaccount_balances_response_deserializes() {
 
     let resp: GetSubaccountBalancesResponse = serde_json::from_str(json).unwrap();
     assert_eq!(resp.subaccount_balances.len(), 1);
-    assert_eq!(resp.subaccount_balances[0].balance, 100);
+    assert_eq!(resp.subaccount_balances[0].balance, "100");
 }
 
 #[test]
