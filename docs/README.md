@@ -41,7 +41,7 @@ let markets: Vec<_> = client
 Note: `get_*_all` loads **all pages into memory** and is intended for convenience only.
 
 ## WebSocket Reconnect
-Use `KalshiWsReconnectingClient` for auto reconnect + resubscribe. It emits explicit connection events:
+`KalshiWsClient` is the high-level WebSocket client with auto reconnect + resubscribe. It emits explicit connection events:
 
 - `WsEvent::Message(...)`
 - `WsEvent::Reconnected { attempt }`
