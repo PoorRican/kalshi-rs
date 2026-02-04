@@ -250,6 +250,12 @@ impl KalshiRestClient {
         self.send(Method::GET, &path, Some(&params), Option::<&()>::None, false).await
     }
 
+    /// GET /series/{series_ticker}
+    pub async fn get_series(&self, series_ticker: &str) -> Result<GetSeriesResponse, KalshiError> {
+        let path = Self::full_path(&format!("/series/{series_ticker}"));
+        self.send(Method::GET, &path, Option::<&()>::None, Option::<&()>::None, false).await
+    }
+
     /// GET /events  (excludes multivariate events)
     pub async fn get_events(&self, params: GetEventsParams) -> Result<GetEventsResponse, KalshiError> {
         params.validate()?;
@@ -481,6 +487,7 @@ impl KalshiRestClient {
 mod tests {
     use super::*;
     use reqwest::StatusCode;
+    use tokio::time::{timeout, Duration};
 
     #[test]
     fn http_error_parses_json_body() {
@@ -522,5 +529,50 @@ mod tests {
             }
             other => panic!("unexpected error: {:?}", other),
         }
+    }
+
+    #[tokio::test]
+    async fn rate_limiter_zero_rps_returns_quickly() {
+        let limiter = RateLimiter::new(RateLimitConfig {
+            read_rps: 0,
+            write_rps: 0,
+        });
+
+        timeout(Duration::from_millis(10), limiter.wait(RateLimitKind::Read))
+            .await
+            .expect("read wait timed out");
+        timeout(Duration::from_millis(10), limiter.wait(RateLimitKind::Write))
+            .await
+            .expect("write wait timed out");
+    }
+
+    #[tokio::test]
+    async fn paginate_cursor_collects_all_pages() {
+        let client = KalshiRestClient::new(KalshiEnvironment::demo());
+        let mut calls = 0usize;
+
+        let items = client
+            .paginate_cursor(Some("c1".to_string()), |cursor| {
+                let expected = if calls == 0 {
+                    Some("c1".to_string())
+                } else {
+                    Some("c2".to_string())
+                };
+                let page = if calls == 0 {
+                    (vec![1, 2], Some("c2".to_string()))
+                } else {
+                    (vec![3], None)
+                };
+                calls += 1;
+                async move {
+                    assert_eq!(cursor, expected);
+                    Ok(page)
+                }
+            })
+            .await
+            .expect("paginate failed");
+
+        assert_eq!(items, vec![1, 2, 3]);
+        assert_eq!(calls, 2);
     }
 }
