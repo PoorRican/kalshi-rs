@@ -1,5 +1,5 @@
 [package]
-name = "kalshi-rs"
+name = "kalshi"
 version = "0.1.0"
 edition = "2024"
 
@@ -27,3 +27,7 @@ rsa = { version = "0.9", features = ["pem"] }
 sha2 = "0.10"
 rand = "0.8"
 base64 = "0.22"
+
+[dev-dependencies]
+anyhow = "1"
+dotenvy = "0.15"

@@ -1,13 +1,10 @@
-use crate::auth::KalshiAuth;
-use crate::env::REST_PREFIX;
-use crate::error::KalshiError;
+use crate::{KalshiAuth, KalshiEnvironment, KalshiError, REST_PREFIX};
+use crate::types::*;
 
 use reqwest::header::{HeaderMap, HeaderName, HeaderValue};
 use reqwest::{Client, Method};
 use serde::{de::DeserializeOwned, Serialize};
 use url::Url;
-
-use crate::types::*;
 
 #[derive(Debug, Clone)]
 pub struct KalshiRestClient {
@@ -17,7 +14,7 @@ pub struct KalshiRestClient {
 }
 
 impl KalshiRestClient {
-    pub fn new(env: crate::env::KalshiEnvironment) -> Self {
+    pub fn new(env: KalshiEnvironment) -> Self {
         Self {
             http: Client::new(),
             rest_origin: env.rest_origin,

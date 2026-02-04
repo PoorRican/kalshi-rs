@@ -504,6 +504,11 @@ pub enum YesNo {
     Yes,
     No,
 }
+impl Default for YesNo {
+    fn default() -> Self {
+        YesNo::Yes
+    }
+}
 impl YesNo {
     pub fn as_str(self) -> &'static str {
         match self {
@@ -527,6 +532,11 @@ impl Serialize for YesNo {
 pub enum BuySell {
     Buy,
     Sell,
+}
+impl Default for BuySell {
+    fn default() -> Self {
+        BuySell::Buy
+    }
 }
 impl BuySell {
     pub fn as_str(self) -> &'static str {
