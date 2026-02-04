@@ -159,6 +159,18 @@ impl<T> CursorPager<T> {
 
         Ok(Some(items))
     }
+
+    /// Returns the cursor for the next page fetch.
+    ///
+    /// Useful for checkpointing/resuming pagination across sessions.
+    pub fn current_cursor(&self) -> Option<&str> {
+        self.cursor.as_deref()
+    }
+
+    /// Returns true if pagination is complete.
+    pub fn is_done(&self) -> bool {
+        self.done
+    }
 }
 
 struct StreamState<T> {
