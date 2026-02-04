@@ -104,14 +104,24 @@ pub struct WsTicker {
 pub struct WsOrderbookSnapshot {
     pub market_ticker: String,
     pub market_id: String,
+    /// Price levels: (price_cents, quantity)
     #[serde(default)]
     pub yes: Vec<(i64, i64)>,
-    #[serde(default)]
-    pub yes_dollars: Vec<(String, String)>,
+    /// Price levels: (price_cents, quantity)
     #[serde(default)]
     pub no: Vec<(i64, i64)>,
+    /// Price levels: (price_dollars, quantity)
     #[serde(default)]
-    pub no_dollars: Vec<(String, String)>,
+    pub yes_dollars: Vec<(String, i64)>,
+    /// Price levels: (price_dollars, quantity)
+    #[serde(default)]
+    pub no_dollars: Vec<(String, i64)>,
+    /// Price levels: (price_dollars, quantity_fp) - fully fixed-point
+    #[serde(default)]
+    pub yes_dollars_fp: Vec<(String, String)>,
+    /// Price levels: (price_dollars, quantity_fp) - fully fixed-point
+    #[serde(default)]
+    pub no_dollars_fp: Vec<(String, String)>,
 }
 
 /// Orderbook delta message (type: "orderbook_delta")
@@ -305,9 +315,12 @@ impl KalshiWsClient {
                     return Ok(serde_json::from_str::<WsEnvelope>(&s)?);
                 }
                 Message::Ping(payload) => {
-                    // tungstenite usually auto-handles pong, but we can respond explicitly.
                     self.write
                         .send(Message::Pong(payload))
+                        .await
+                        .map_err(|e| KalshiError::Ws(e.to_string()))?;
+                    self.write
+                        .flush()
                         .await
                         .map_err(|e| KalshiError::Ws(e.to_string()))?;
                 }
