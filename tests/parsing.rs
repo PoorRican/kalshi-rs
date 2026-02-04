@@ -2,14 +2,14 @@
 
 use kalshi::{
     ApplySubaccountTransferResponse, BuySell, CreateOrderRequest, CreateSubaccountResponse,
-    EventStatus, GetAccountApiLimitsResponse, GetEventsParams, GetExchangeAnnouncementsResponse,
-    GetExchangeScheduleResponse, GetExchangeStatusResponse, GetFillsParams, GetFillsResponse,
-    GetMarketOrderbookResponse, GetMarketsParams, GetOrdersParams, GetPositionsParams,
-    GetSeriesFeeChangesParams, GetSeriesFeeChangesResponse, GetSettlementsParams,
-    GetSettlementsResponse, GetSubaccountBalancesResponse, GetSubaccountTransfersParams,
-    GetSubaccountTransfersResponse, GetTradesParams, GetTradesResponse,
-    GetUserDataTimestampResponse, MarketStatus, MveFilter, OrderStatus, OrderType,
-    PositionCountFilter, SelfTradePreventionType, TimeInForce, YesNo,
+    ErrorResponse, EventStatus, GetAccountApiLimitsResponse, GetEventsParams,
+    GetExchangeAnnouncementsResponse, GetExchangeScheduleResponse, GetExchangeStatusResponse,
+    GetFillsParams, GetFillsResponse, GetMarketOrderbookResponse, GetMarketsParams,
+    GetOrdersParams, GetPositionsParams, GetSeriesFeeChangesParams, GetSeriesFeeChangesResponse,
+    GetSettlementsParams, GetSettlementsResponse, GetSubaccountBalancesResponse,
+    GetSubaccountTransfersParams, GetSubaccountTransfersResponse, GetTradesParams,
+    GetTradesResponse, GetUserDataTimestampResponse, MarketStatus, MveFilter, OrderStatus,
+    OrderType, PositionCountFilter, PriceRange, SelfTradePreventionType, TimeInForce, YesNo,
 };
 
 // ============================================================================
@@ -227,6 +227,27 @@ fn get_settlements_params_serializes_correctly() {
     let json = serde_json::to_value(&params).unwrap();
     assert_eq!(json["limit"], 10);
     assert_eq!(json["event_ticker"], "EVT-1");
+}
+
+// ============================================================================
+// Model Deserialization Tests
+// ============================================================================
+
+#[test]
+fn error_response_deserializes_details_string() {
+    let json = r#"{"code":"bad","message":"oops","details":"extra info","service":"svc"}"#;
+    let err: ErrorResponse = serde_json::from_str(json).unwrap();
+    assert_eq!(err.code.as_deref(), Some("bad"));
+    assert_eq!(err.details.as_deref(), Some("extra info"));
+}
+
+#[test]
+fn price_range_deserializes_with_aliases() {
+    let json = r#"{"min_price":"0.10","max_price":"0.90","increment":"0.05"}"#;
+    let range: PriceRange = serde_json::from_str(json).unwrap();
+    assert_eq!(range.start, "0.10");
+    assert_eq!(range.end, "0.90");
+    assert_eq!(range.step, "0.05");
 }
 
 #[test]
