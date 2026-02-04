@@ -1,6 +1,8 @@
 use crate::error::KalshiError;
 use crate::rest::types::{EventPosition, MarketPosition};
-use crate::types::{AnyJson, BuySell, MarketStatus, TradeTakerSide, YesNo};
+use crate::types::{
+    BuySell, FixedPointCount, FixedPointDollars, MarketStatus, TradeTakerSide, YesNo,
+};
 
 use serde::{Deserialize, Serialize};
 use serde::de::{Error as _, Visitor};
@@ -75,7 +77,13 @@ pub enum WsMsgType {
     MarketPositions,
     MarketLifecycleV2,
     Multivariate,
+    MultivariateLookup,
     Communications,
+    RfqCreated,
+    RfqDeleted,
+    QuoteCreated,
+    QuoteAccepted,
+    QuoteExecuted,
     OrderGroupUpdates,
     Unknown(String),
 }
@@ -97,7 +105,13 @@ impl WsMsgType {
             WsMsgType::MarketPositions => "market_positions",
             WsMsgType::MarketLifecycleV2 => "market_lifecycle_v2",
             WsMsgType::Multivariate => "multivariate",
+            WsMsgType::MultivariateLookup => "multivariate_lookup",
             WsMsgType::Communications => "communications",
+            WsMsgType::RfqCreated => "rfq_created",
+            WsMsgType::RfqDeleted => "rfq_deleted",
+            WsMsgType::QuoteCreated => "quote_created",
+            WsMsgType::QuoteAccepted => "quote_accepted",
+            WsMsgType::QuoteExecuted => "quote_executed",
             WsMsgType::OrderGroupUpdates => "order_group_updates",
             WsMsgType::Unknown(value) => value.as_str(),
         }
@@ -119,7 +133,13 @@ impl WsMsgType {
             "market_positions" => WsMsgType::MarketPositions,
             "market_lifecycle_v2" => WsMsgType::MarketLifecycleV2,
             "multivariate" => WsMsgType::Multivariate,
+            "multivariate_lookup" => WsMsgType::MultivariateLookup,
             "communications" => WsMsgType::Communications,
+            "rfq_created" => WsMsgType::RfqCreated,
+            "rfq_deleted" => WsMsgType::RfqDeleted,
+            "quote_created" => WsMsgType::QuoteCreated,
+            "quote_accepted" => WsMsgType::QuoteAccepted,
+            "quote_executed" => WsMsgType::QuoteExecuted,
             "order_group_updates" => WsMsgType::OrderGroupUpdates,
             _ => return None,
         })
@@ -141,7 +161,13 @@ impl WsMsgType {
             "market_positions" => WsMsgType::MarketPositions,
             "market_lifecycle_v2" => WsMsgType::MarketLifecycleV2,
             "multivariate" => WsMsgType::Multivariate,
+            "multivariate_lookup" => WsMsgType::MultivariateLookup,
             "communications" => WsMsgType::Communications,
+            "rfq_created" => WsMsgType::RfqCreated,
+            "rfq_deleted" => WsMsgType::RfqDeleted,
+            "quote_created" => WsMsgType::QuoteCreated,
+            "quote_accepted" => WsMsgType::QuoteAccepted,
+            "quote_executed" => WsMsgType::QuoteExecuted,
             "order_group_updates" => WsMsgType::OrderGroupUpdates,
             _ => WsMsgType::Unknown(value),
         }
@@ -422,14 +448,175 @@ pub struct WsMarketPositions {
     pub event_positions: Vec<EventPosition>,
 }
 
-/// Communications message payload (type: "communications")
-pub type WsCommunications = AnyJson;
+#[derive(Debug, Clone, Deserialize)]
+pub struct WsMultivariateSelectedMarket {
+    pub event_ticker: String,
+    pub market_ticker: String,
+    pub side: YesNo,
+}
 
-/// Multivariate message payload (type: "multivariate")
-pub type WsMultivariate = AnyJson;
+/// Multivariate message payload (type: "multivariate_lookup")
+#[derive(Debug, Clone, Deserialize)]
+pub struct WsMultivariate {
+    pub collection_ticker: String,
+    pub event_ticker: String,
+    pub market_ticker: String,
+    pub selected_markets: Vec<WsMultivariateSelectedMarket>,
+}
+
+#[derive(Debug, Clone, Copy, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum WsOrderGroupEventType {
+    Created,
+    Triggered,
+    Reset,
+    Deleted,
+    LimitUpdated,
+    #[serde(other)]
+    Unknown,
+}
 
 /// Order group update message payload (type: "order_group_updates")
-pub type WsOrderGroupUpdate = AnyJson;
+#[derive(Debug, Clone, Deserialize)]
+pub struct WsOrderGroupUpdate {
+    pub event_type: WsOrderGroupEventType,
+    pub order_group_id: String,
+    #[serde(default)]
+    pub contracts_limit_fp: Option<FixedPointCount>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct WsMveSelectedLeg {
+    #[serde(default)]
+    pub event_ticker: Option<String>,
+    #[serde(default)]
+    pub market_ticker: Option<String>,
+    #[serde(default)]
+    pub side: Option<YesNo>,
+    #[serde(default)]
+    pub yes_settlement_value_dollars: Option<FixedPointDollars>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct WsRfqCreated {
+    pub id: String,
+    pub creator_id: String,
+    pub market_ticker: String,
+    #[serde(default)]
+    pub event_ticker: Option<String>,
+    #[serde(default)]
+    pub contracts: Option<i64>,
+    #[serde(default)]
+    pub contracts_fp: Option<FixedPointCount>,
+    #[serde(default)]
+    pub target_cost: Option<i64>,
+    #[serde(default)]
+    pub target_cost_dollars: Option<FixedPointDollars>,
+    pub created_ts: String,
+    #[serde(default)]
+    pub mve_collection_ticker: Option<String>,
+    #[serde(default)]
+    pub mve_selected_legs: Option<Vec<WsMveSelectedLeg>>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct WsRfqDeleted {
+    pub id: String,
+    pub creator_id: String,
+    pub market_ticker: String,
+    #[serde(default)]
+    pub event_ticker: Option<String>,
+    #[serde(default)]
+    pub contracts: Option<i64>,
+    #[serde(default)]
+    pub contracts_fp: Option<FixedPointCount>,
+    #[serde(default)]
+    pub target_cost: Option<i64>,
+    #[serde(default)]
+    pub target_cost_dollars: Option<FixedPointDollars>,
+    pub deleted_ts: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct WsQuoteCreated {
+    pub quote_id: String,
+    pub rfq_id: String,
+    pub quote_creator_id: String,
+    pub market_ticker: String,
+    #[serde(default)]
+    pub event_ticker: Option<String>,
+    pub yes_bid: i64,
+    pub no_bid: i64,
+    pub yes_bid_dollars: FixedPointDollars,
+    pub no_bid_dollars: FixedPointDollars,
+    #[serde(default)]
+    pub yes_contracts_offered: Option<i64>,
+    #[serde(default)]
+    pub no_contracts_offered: Option<i64>,
+    #[serde(default)]
+    pub yes_contracts_offered_fp: Option<FixedPointCount>,
+    #[serde(default)]
+    pub no_contracts_offered_fp: Option<FixedPointCount>,
+    #[serde(default)]
+    pub rfq_target_cost: Option<i64>,
+    #[serde(default)]
+    pub rfq_target_cost_dollars: Option<FixedPointDollars>,
+    pub created_ts: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct WsQuoteAccepted {
+    pub quote_id: String,
+    pub rfq_id: String,
+    pub quote_creator_id: String,
+    pub market_ticker: String,
+    #[serde(default)]
+    pub event_ticker: Option<String>,
+    pub yes_bid: i64,
+    pub no_bid: i64,
+    pub yes_bid_dollars: FixedPointDollars,
+    pub no_bid_dollars: FixedPointDollars,
+    #[serde(default)]
+    pub accepted_side: Option<YesNo>,
+    #[serde(default)]
+    pub contracts_accepted: Option<i64>,
+    #[serde(default)]
+    pub yes_contracts_offered: Option<i64>,
+    #[serde(default)]
+    pub no_contracts_offered: Option<i64>,
+    #[serde(default)]
+    pub contracts_accepted_fp: Option<FixedPointCount>,
+    #[serde(default)]
+    pub yes_contracts_offered_fp: Option<FixedPointCount>,
+    #[serde(default)]
+    pub no_contracts_offered_fp: Option<FixedPointCount>,
+    #[serde(default)]
+    pub rfq_target_cost: Option<i64>,
+    #[serde(default)]
+    pub rfq_target_cost_dollars: Option<FixedPointDollars>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct WsQuoteExecuted {
+    pub quote_id: String,
+    pub rfq_id: String,
+    pub quote_creator_id: String,
+    pub rfq_creator_id: String,
+    pub order_id: String,
+    pub client_order_id: String,
+    pub market_ticker: String,
+    pub executed_ts: String,
+}
+
+/// Communications message payloads (RFQs and quotes).
+#[derive(Debug, Clone)]
+pub enum WsCommunications {
+    RfqCreated(WsRfqCreated),
+    RfqDeleted(WsRfqDeleted),
+    QuoteCreated(WsQuoteCreated),
+    QuoteAccepted(WsQuoteAccepted),
+    QuoteExecuted(WsQuoteExecuted),
+}
 
 /// Envelope used by Kalshi WS (data + errors use "type")
 #[derive(Debug, Clone, Deserialize)]
@@ -529,21 +716,47 @@ impl WsEnvelope {
                 seq,
                 msg: parse_msg(&msg)?,
             })),
-            WsMsgType::Multivariate => Ok(WsMessage::Data(WsDataMessage::Multivariate {
+            WsMsgType::Multivariate | WsMsgType::MultivariateLookup => {
+                Ok(WsMessage::Data(WsDataMessage::Multivariate {
+                    sid,
+                    seq,
+                    msg: parse_msg(&msg)?,
+                }))
+            }
+            WsMsgType::RfqCreated => Ok(WsMessage::Data(WsDataMessage::Communications {
                 sid,
                 seq,
-                msg: parse_msg(&msg)?,
+                msg: WsCommunications::RfqCreated(parse_msg(&msg)?),
             })),
-            WsMsgType::Communications => Ok(WsMessage::Data(WsDataMessage::Communications {
+            WsMsgType::RfqDeleted => Ok(WsMessage::Data(WsDataMessage::Communications {
                 sid,
                 seq,
-                msg: parse_msg(&msg)?,
+                msg: WsCommunications::RfqDeleted(parse_msg(&msg)?),
+            })),
+            WsMsgType::QuoteCreated => Ok(WsMessage::Data(WsDataMessage::Communications {
+                sid,
+                seq,
+                msg: WsCommunications::QuoteCreated(parse_msg(&msg)?),
+            })),
+            WsMsgType::QuoteAccepted => Ok(WsMessage::Data(WsDataMessage::Communications {
+                sid,
+                seq,
+                msg: WsCommunications::QuoteAccepted(parse_msg(&msg)?),
+            })),
+            WsMsgType::QuoteExecuted => Ok(WsMessage::Data(WsDataMessage::Communications {
+                sid,
+                seq,
+                msg: WsCommunications::QuoteExecuted(parse_msg(&msg)?),
             })),
             WsMsgType::OrderGroupUpdates => Ok(WsMessage::Data(WsDataMessage::OrderGroupUpdates {
                 sid,
                 seq,
                 msg: parse_msg(&msg)?,
             })),
+            WsMsgType::Communications => Ok(WsMessage::Unknown {
+                msg_type: WsMsgType::Communications,
+                raw: msg,
+            }),
             other => Ok(WsMessage::Unknown { msg_type: other, raw: msg }),
         }
     }
