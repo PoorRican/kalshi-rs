@@ -1,7 +1,7 @@
 mod common;
 
 use kalshi::{
-    GetMarketsParams, KalshiRestClient, KalshiWsClient, MarketStatus, WsChannel, WsDataMessage,
+    GetMarketsParams, KalshiRestClient, KalshiWsLowLevelClient, MarketStatus, WsChannel, WsDataMessage,
     WsMessage, WsSubscriptionParams,
 };
 use std::time::Duration;
@@ -12,7 +12,7 @@ async fn test_ws_authenticated_connect() {
     let auth = common::load_auth();
 
     let ws = tokio::time::timeout(common::TEST_TIMEOUT, async {
-        KalshiWsClient::connect_authenticated(common::demo_env(), auth).await
+        KalshiWsLowLevelClient::connect_authenticated(common::demo_env(), auth).await
     })
     .await
     .expect("timeout")
@@ -50,7 +50,7 @@ async fn test_ws_orderbook_delta_subscribe() {
 
     // Connect with auth
     let mut ws = tokio::time::timeout(common::TEST_TIMEOUT, async {
-        KalshiWsClient::connect_authenticated(common::demo_env(), auth).await
+        KalshiWsLowLevelClient::connect_authenticated(common::demo_env(), auth).await
     })
     .await
     .expect("timeout")
@@ -88,7 +88,7 @@ async fn test_ws_fill_subscribe() {
     let auth = common::load_auth();
 
     let mut ws = tokio::time::timeout(common::TEST_TIMEOUT, async {
-        KalshiWsClient::connect_authenticated(common::demo_env(), auth).await
+        KalshiWsLowLevelClient::connect_authenticated(common::demo_env(), auth).await
     })
     .await
     .expect("timeout")

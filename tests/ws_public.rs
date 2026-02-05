@@ -1,6 +1,6 @@
 mod common;
 
-use kalshi::{KalshiWsClient, WsChannel, WsDataMessage, WsMessage, WsSubscriptionParams};
+use kalshi::{KalshiWsLowLevelClient, WsChannel, WsDataMessage, WsMessage, WsSubscriptionParams};
 use std::time::Duration;
 
 // NOTE: Kalshi WebSocket requires authentication for ALL connections,
@@ -13,7 +13,7 @@ async fn test_ws_connect_authenticated() {
     let auth = common::load_auth();
 
     let ws = tokio::time::timeout(common::TEST_TIMEOUT, async {
-        KalshiWsClient::connect_authenticated(common::demo_env(), auth).await
+        KalshiWsLowLevelClient::connect_authenticated(common::demo_env(), auth).await
     })
     .await
     .expect("timeout")
@@ -29,7 +29,7 @@ async fn test_ws_ticker_subscribe() {
     let auth = common::load_auth();
 
     let mut ws = tokio::time::timeout(common::TEST_TIMEOUT, async {
-        KalshiWsClient::connect_authenticated(common::demo_env(), auth).await
+        KalshiWsLowLevelClient::connect_authenticated(common::demo_env(), auth).await
     })
     .await
     .expect("timeout")
@@ -64,7 +64,7 @@ async fn test_ws_ticker_v2_subscribe() {
     let auth = common::load_auth();
 
     let mut ws = tokio::time::timeout(common::TEST_TIMEOUT, async {
-        KalshiWsClient::connect_authenticated(common::demo_env(), auth).await
+        KalshiWsLowLevelClient::connect_authenticated(common::demo_env(), auth).await
     })
     .await
     .expect("timeout")
@@ -103,7 +103,7 @@ async fn test_ws_private_channel_requires_auth_flag() {
     let mut ws = tokio::time::timeout(common::TEST_TIMEOUT, async {
         // Use unauthenticated connect - this will fail at handshake
         // Instead, test the client-side logic directly
-        KalshiWsClient::connect_authenticated(common::demo_env(), auth).await
+        KalshiWsLowLevelClient::connect_authenticated(common::demo_env(), auth).await
     })
     .await
     .expect("timeout")

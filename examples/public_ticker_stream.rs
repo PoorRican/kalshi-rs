@@ -1,7 +1,7 @@
 use anyhow;
 use kalshi::{
-    KalshiAuth, KalshiEnvironment, KalshiWsClient, WsChannel, WsDataMessage, WsMessage,
-    WsSubscriptionParams,
+    KalshiAuth, KalshiEnvironment, KalshiWsClient, WsChannel, WsDataMessage, WsEvent, WsMessage,
+    WsReconnectConfig, WsSubscriptionParams,
 };
 
 #[tokio::main]
@@ -14,7 +14,8 @@ async fn main() -> anyhow::Result<()> {
         std::env::var("KALSHI_PRIVATE_KEY_PATH")?,
     )?;
 
-    let mut ws = KalshiWsClient::connect_authenticated(env, auth).await?;
+    let mut ws =
+        KalshiWsClient::connect_authenticated(env, auth, WsReconnectConfig::default()).await?;
 
     ws.subscribe(WsSubscriptionParams {
         channels: vec![WsChannel::Ticker],
@@ -23,17 +24,27 @@ async fn main() -> anyhow::Result<()> {
     .await?;
 
     loop {
-        let msg = ws.next_message().await?;
-        match msg {
-            WsMessage::Data(WsDataMessage::Ticker { msg, .. }) => {
-                println!(
-                    "type=ticker market={} price={}",
-                    msg.market_ticker, msg.price
-                );
+        match ws.next_event().await? {
+            WsEvent::Message(msg) => match msg {
+                WsMessage::Data(WsDataMessage::Ticker { msg, .. }) => {
+                    println!(
+                        "type=ticker market={} price={}",
+                        msg.market_ticker, msg.price
+                    );
+                }
+                other => {
+                    println!("type=other msg={:?}", other);
+                }
+            },
+            WsEvent::Reconnected { attempt } => {
+                println!("type=reconnected attempt={}", attempt);
             }
-            other => {
-                println!("type=other msg={:?}", other);
+            WsEvent::Disconnected { error } => {
+                println!("type=disconnected error={:?}", error);
+                break;
             }
         }
     }
+
+    Ok(())
 }

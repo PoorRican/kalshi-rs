@@ -2,7 +2,10 @@
 ///
 /// This channel is explicitly called out in the docs as being authenticated
 
-use kalshi::{KalshiAuth, KalshiEnvironment, KalshiWsClient, WsChannel, WsSubscriptionParams};
+use kalshi::{
+    KalshiAuth, KalshiEnvironment, KalshiWsClient, WsChannel, WsEvent, WsReconnectConfig,
+    WsSubscriptionParams,
+};
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -13,7 +16,8 @@ async fn main() -> anyhow::Result<()> {
         std::env::var("KALSHI_PRIVATE_KEY_PATH")?,
     )?;
 
-    let mut ws = KalshiWsClient::connect_authenticated(env, auth).await?;
+    let mut ws =
+        KalshiWsClient::connect_authenticated(env, auth, WsReconnectConfig::default()).await?;
 
     ws.subscribe(WsSubscriptionParams {
         channels: vec![WsChannel::OrderbookDelta],
@@ -23,7 +27,15 @@ async fn main() -> anyhow::Result<()> {
     .await?;
 
     loop {
-        let msg = ws.next_message().await?;
-        println!("{:?}", msg);
+        match ws.next_event().await? {
+            WsEvent::Message(msg) => println!("{:?}", msg),
+            WsEvent::Reconnected { attempt } => println!("Reconnected (attempt {})", attempt),
+            WsEvent::Disconnected { error } => {
+                println!("Disconnected: {:?}", error);
+                break;
+            }
+        }
     }
+
+    Ok(())
 }

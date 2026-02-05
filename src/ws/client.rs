@@ -110,14 +110,14 @@ impl SubscriptionTracker {
     }
 }
 
-pub struct KalshiWsClient {
+pub struct KalshiWsLowLevelClient {
     write: futures::stream::SplitSink<WsStream, Message>,
     read: futures::stream::SplitStream<WsStream>,
     next_id: u64,
     authenticated: bool,
 }
 
-impl KalshiWsClient {
+impl KalshiWsLowLevelClient {
     /// Connect without auth (public channels only).
     pub async fn connect(env: KalshiEnvironment) -> Result<Self, KalshiError> {
         let (ws_stream, _resp) = connect_async(&env.ws_url)
@@ -285,21 +285,20 @@ impl KalshiWsClient {
     }
 }
 
-// TODO: rename to `KalshiWsHighLevelClient` or something similar
-pub struct KalshiWsReconnectingClient {
+pub struct KalshiWsClient {
     env: KalshiEnvironment,
     auth: Option<KalshiAuth>,
-    client: KalshiWsClient,
+    client: KalshiWsLowLevelClient,
     config: WsReconnectConfig,
     tracker: SubscriptionTracker,
 }
 
-impl KalshiWsReconnectingClient {
+impl KalshiWsClient {
     pub async fn connect(
         env: KalshiEnvironment,
         config: WsReconnectConfig,
     ) -> Result<Self, KalshiError> {
-        let client = KalshiWsClient::connect(env.clone()).await?;
+        let client = KalshiWsLowLevelClient::connect(env.clone()).await?;
         Ok(Self {
             env,
             auth: None,
@@ -314,7 +313,7 @@ impl KalshiWsReconnectingClient {
         auth: KalshiAuth,
         config: WsReconnectConfig,
     ) -> Result<Self, KalshiError> {
-        let client = KalshiWsClient::connect_authenticated(env.clone(), auth.clone()).await?;
+        let client = KalshiWsLowLevelClient::connect_authenticated(env.clone(), auth.clone()).await?;
         Ok(Self {
             env,
             auth: Some(auth),
@@ -385,9 +384,9 @@ impl KalshiWsReconnectingClient {
     async fn reconnect(&mut self) -> Result<(), KalshiError> {
         let new_client = match &self.auth {
             Some(auth) => {
-                KalshiWsClient::connect_authenticated(self.env.clone(), auth.clone()).await?
+                KalshiWsLowLevelClient::connect_authenticated(self.env.clone(), auth.clone()).await?
             }
-            None => KalshiWsClient::connect(self.env.clone()).await?,
+            None => KalshiWsLowLevelClient::connect(self.env.clone()).await?,
         };
         self.client = new_client;
 
@@ -521,7 +520,7 @@ mod tests {
             resubscribe: false,
         };
         let mut client =
-            KalshiWsReconnectingClient::connect_authenticated(env, auth, config)
+            KalshiWsClient::connect_authenticated(env, auth, config)
                 .await
                 .expect("connect");
 
