@@ -123,6 +123,28 @@ impl RateLimiter {
     }
 }
 
+/// Manual page-by-page cursor pagination.
+///
+/// Use `CursorPager` when you need:
+/// - Explicit control over when to fetch the next page
+/// - Access to page boundaries (e.g., for batch processing)
+/// - Custom termination logic based on page contents
+///
+/// For item-by-item iteration, see the `stream_*` methods on [`KalshiRestClient`].
+///
+/// # Example
+/// ```no_run
+/// # use kalshi::{KalshiEnvironment, KalshiRestClient, GetMarketsParams};
+/// # async fn example() -> Result<(), kalshi::KalshiError> {
+/// let client = KalshiRestClient::new(KalshiEnvironment::demo());
+/// let mut pager = client.markets_pager(GetMarketsParams::default());
+///
+/// while let Some(markets) = pager.next_page().await? {
+///     println!("Got {} markets", markets.len());
+/// }
+/// # Ok(())
+/// # }
+/// ```
 pub struct CursorPager<T> {
     cursor: Option<String>,
     done: bool,
@@ -146,6 +168,10 @@ impl<T> CursorPager<T> {
         }
     }
 
+    /// Fetch the next page of results.
+    ///
+    /// Returns `Ok(Some(items))` if there are more results, `Ok(None)` when
+    /// pagination is complete, or `Err` on failure.
     pub async fn next_page(&mut self) -> Result<Option<Vec<T>>, KalshiError> {
         if self.done {
             return Ok(None);
@@ -159,6 +185,18 @@ impl<T> CursorPager<T> {
 
         Ok(Some(items))
     }
+
+    /// Returns the cursor for the next page fetch.
+    ///
+    /// Useful for checkpointing/resuming pagination across sessions.
+    pub fn current_cursor(&self) -> Option<&str> {
+        self.cursor.as_deref()
+    }
+
+    /// Returns true if pagination is complete.
+    pub fn is_done(&self) -> bool {
+        self.done
+    }
 }
 
 struct StreamState<T> {
@@ -168,6 +206,19 @@ struct StreamState<T> {
     done: bool,
 }
 
+/// Stream items one-by-one from paginated endpoints.
+///
+/// Streams provide lazy, item-level iteration built on [`CursorPager`].
+/// Pages are fetched on-demand; use `max_items` for early termination.
+///
+/// # Pagers vs Streams
+///
+/// | Aspect | Pager | Stream |
+/// |--------|-------|--------|
+/// | Returns | Full pages (`Vec<T>`) | Individual items |
+/// | Control | Manual `next_page()` | Async iterator |
+/// | Early stop | Stop calling `next_page()` | `max_items` or `.take()` |
+/// | Use case | Batch processing, checkpointing | Item processing, collecting subsets |
 fn stream_items<T>(
     pager: CursorPager<T>,
     max_items: Option<usize>,
@@ -539,6 +590,23 @@ impl KalshiRestClient {
         Ok(items)
     }
 
+    /// Create a pager for iterating over events page by page.
+    ///
+    /// # Example
+    /// ```no_run
+    /// # use kalshi::{KalshiEnvironment, KalshiRestClient, GetEventsParams};
+    /// # async fn example() -> Result<(), kalshi::KalshiError> {
+    /// let client = KalshiRestClient::new(KalshiEnvironment::demo());
+    /// let mut pager = client.events_pager(GetEventsParams::default());
+    ///
+    /// while let Some(events) = pager.next_page().await? {
+    ///     for event in events {
+    ///         println!("{}", event.event_ticker);
+    ///     }
+    /// }
+    /// # Ok(())
+    /// # }
+    /// ```
     pub fn events_pager(&self, params: GetEventsParams) -> CursorPager<EventData> {
         let client = self.clone();
         let base_params = params.clone();
@@ -553,6 +621,7 @@ impl KalshiRestClient {
         })
     }
 
+    /// Create a pager for iterating over markets page by page.
     pub fn markets_pager(&self, params: GetMarketsParams) -> CursorPager<Market> {
         let client = self.clone();
         let base_params = params.clone();
@@ -567,6 +636,7 @@ impl KalshiRestClient {
         })
     }
 
+    /// Create a pager for iterating over trades page by page.
     pub fn trades_pager(&self, params: GetTradesParams) -> CursorPager<Trade> {
         let client = self.clone();
         let base_params = params.clone();
@@ -581,6 +651,7 @@ impl KalshiRestClient {
         })
     }
 
+    /// Create a pager for iterating over positions page by page (authenticated).
     pub fn positions_pager(&self, params: GetPositionsParams) -> CursorPager<PositionsPage> {
         let client = self.clone();
         let base_params = params.clone();
@@ -597,6 +668,7 @@ impl KalshiRestClient {
         })
     }
 
+    /// Create a pager for iterating over orders page by page (authenticated).
     pub fn orders_pager(&self, params: GetOrdersParams) -> CursorPager<Order> {
         let client = self.clone();
         let base_params = params.clone();
@@ -611,6 +683,7 @@ impl KalshiRestClient {
         })
     }
 
+    /// Create a pager for iterating over fills page by page (authenticated).
     pub fn fills_pager(&self, params: GetFillsParams) -> CursorPager<Fill> {
         let client = self.clone();
         let base_params = params.clone();
@@ -625,6 +698,7 @@ impl KalshiRestClient {
         })
     }
 
+    /// Create a pager for iterating over settlements page by page (authenticated).
     pub fn settlements_pager(&self, params: GetSettlementsParams) -> CursorPager<Settlement> {
         let client = self.clone();
         let base_params = params.clone();
@@ -639,6 +713,7 @@ impl KalshiRestClient {
         })
     }
 
+    /// Create a pager for iterating over subaccount transfers page by page (authenticated).
     pub fn subaccount_transfers_pager(
         &self,
         params: GetSubaccountTransfersParams,
@@ -656,6 +731,21 @@ impl KalshiRestClient {
         })
     }
 
+    /// Stream events one by one.
+    ///
+    /// # Example
+    /// ```no_run
+    /// # use kalshi::{KalshiEnvironment, KalshiRestClient, GetEventsParams};
+    /// # use futures::stream::TryStreamExt;
+    /// # async fn example() -> Result<(), kalshi::KalshiError> {
+    /// let client = KalshiRestClient::new(KalshiEnvironment::demo());
+    /// let events: Vec<_> = client
+    ///     .stream_events(GetEventsParams::default(), Some(10))
+    ///     .try_collect()
+    ///     .await?;
+    /// # Ok(())
+    /// # }
+    /// ```
     pub fn stream_events(
         &self,
         params: GetEventsParams,
@@ -664,6 +754,7 @@ impl KalshiRestClient {
         stream_items(self.events_pager(params), max_items)
     }
 
+    /// Stream markets one by one.
     pub fn stream_markets(
         &self,
         params: GetMarketsParams,
@@ -672,6 +763,7 @@ impl KalshiRestClient {
         stream_items(self.markets_pager(params), max_items)
     }
 
+    /// Stream trades one by one.
     pub fn stream_trades(
         &self,
         params: GetTradesParams,
@@ -680,6 +772,7 @@ impl KalshiRestClient {
         stream_items(self.trades_pager(params), max_items)
     }
 
+    /// Stream positions one by one (authenticated).
     pub fn stream_positions(
         &self,
         params: GetPositionsParams,
@@ -688,6 +781,7 @@ impl KalshiRestClient {
         stream_items(self.positions_pager(params), max_items)
     }
 
+    /// Stream orders one by one (authenticated).
     pub fn stream_orders(
         &self,
         params: GetOrdersParams,
@@ -696,6 +790,7 @@ impl KalshiRestClient {
         stream_items(self.orders_pager(params), max_items)
     }
 
+    /// Stream fills one by one (authenticated).
     pub fn stream_fills(
         &self,
         params: GetFillsParams,
@@ -704,6 +799,7 @@ impl KalshiRestClient {
         stream_items(self.fills_pager(params), max_items)
     }
 
+    /// Stream settlements one by one (authenticated).
     pub fn stream_settlements(
         &self,
         params: GetSettlementsParams,
@@ -712,6 +808,7 @@ impl KalshiRestClient {
         stream_items(self.settlements_pager(params), max_items)
     }
 
+    /// Stream subaccount transfers one by one (authenticated).
     pub fn stream_subaccount_transfers(
         &self,
         params: GetSubaccountTransfersParams,
