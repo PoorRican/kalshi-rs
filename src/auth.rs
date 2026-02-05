@@ -23,7 +23,7 @@ pub struct KalshiAuthHeaders {
 }
 
 impl KalshiAuth {
-    /// Load a `.key` PEM file (Kalshi UI downloads a private key as `.key`) :contentReference[oaicite:16]{index=16}
+    /// Load a `.key` PEM file (Kalshi UI downloads a private key as `.key`).
     pub fn from_pem_file(
         key_id: impl Into<String>,
         pem_path: impl AsRef<std::path::Path>,
@@ -46,7 +46,7 @@ impl KalshiAuth {
         })
     }
 
-    /// Milliseconds since UNIX epoch, as required by Kalshi auth headers. :contentReference[oaicite:17]{index=17}
+    /// Milliseconds since UNIX epoch, as required by Kalshi auth headers.
     pub fn now_timestamp_ms() -> String {
         let ms = SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -56,8 +56,8 @@ impl KalshiAuth {
     }
 
     /// Create signature for a request:
-    /// message = timestamp + METHOD + path_without_query
-    /// signature = RSA-PSS(SHA256), base64 encoded :contentReference[oaicite:18]{index=18}
+    /// `message = timestamp + METHOD + path_without_query`,
+    /// `signature = RSA-PSS(SHA256)`, base64 encoded.
     pub fn sign(
         &self,
         timestamp_ms: &str,
@@ -70,7 +70,7 @@ impl KalshiAuth {
         // RSA-PSS is randomized; use OS RNG.
         let mut rng = OsRng;
 
-        // PSS with SHA256 (salt length = digest length) per docs :contentReference[oaicite:19]{index=19}
+        // PSS with SHA256 (salt length = digest length) per Kalshi docs.
         let signing_key = SigningKey::<Sha256>::new(self.private_key.clone());
         let signature = signing_key.sign_with_rng(&mut rng, message_bytes);
 
@@ -84,7 +84,7 @@ impl KalshiAuth {
         format!("{timestamp_ms}{method}{path_without_query}")
     }
 
-    /// Build the three headers required by Kalshi authenticated endpoints. :contentReference[oaicite:20]{index=20}
+    /// Build the three headers required by Kalshi authenticated endpoints.
     pub fn build_headers(
         &self,
         method: &str,

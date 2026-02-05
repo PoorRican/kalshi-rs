@@ -12,7 +12,7 @@ const LIVE_HOST: &str = "api.elections.kalshi.com";
 
 #[derive(Debug, Clone)]
 pub struct KalshiEnvironment {
-    /// Origin only, e.g. https://demo-api.kalshi.co (Url for reqwest compatibility)
+    /// Origin only, e.g. <https://demo-api.kalshi.co> (Url for reqwest compatibility).
     pub rest_origin: Url,
     /// Pre-computed WS URL string for direct use with tokio-tungstenite
     pub ws_url: String,
@@ -20,8 +20,8 @@ pub struct KalshiEnvironment {
 
 impl KalshiEnvironment {
     /// Demo environment.
-    /// REST origin: https://demo-api.kalshi.co
-    /// WS URL: wss://demo-api.kalshi.co/trade-api/ws/v2
+    /// REST origin: <https://demo-api.kalshi.co>
+    /// WS URL: `wss://demo-api.kalshi.co/trade-api/ws/v2`
     pub fn demo() -> Self {
         Self {
             rest_origin: Url::parse(&format!("https://{DEMO_HOST}/"))
@@ -31,8 +31,8 @@ impl KalshiEnvironment {
     }
 
     /// Production environment.
-    /// REST base in docs uses https://api.elections.kalshi.com/trade-api/v2/
-    /// WS URL: wss://api.elections.kalshi.com/trade-api/ws/v2
+    /// REST base in docs uses <https://api.elections.kalshi.com/trade-api/v2/>
+    /// WS URL: `wss://api.elections.kalshi.com/trade-api/ws/v2`
     pub fn production() -> Self {
         Self {
             rest_origin: Url::parse(&format!("https://{LIVE_HOST}/"))
