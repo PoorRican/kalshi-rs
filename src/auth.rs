@@ -102,12 +102,31 @@ impl KalshiAuth {
 }
 
 #[cfg(test)]
-mod tests {
+pub mod tests {
     use super::KalshiAuth;
     use base64::{Engine as _, engine::general_purpose::STANDARD};
     use rsa::pss::{Signature, VerifyingKey};
     use rsa::signature::Verifier;
     use sha2::Sha256;
+
+    /// Load auth for tests. Optionally loads .env.test, supports both
+    /// KALSHI_PRIVATE_KEY (content) and KALSHI_PRIVATE_KEY_PATH (file path).
+    pub fn load_test_auth() -> KalshiAuth {
+        dotenvy::from_filename(".env.test").ok();
+
+        let key_id = std::env::var("KALSHI_KEY_ID").expect("KALSHI_KEY_ID required");
+
+        if let Ok(pem_content) = std::env::var("KALSHI_PRIVATE_KEY") {
+            let pem_content = pem_content.replace("\\n", "\n");
+            KalshiAuth::from_pem_str(key_id, &pem_content)
+                .expect("load auth from KALSHI_PRIVATE_KEY")
+        } else {
+            let pem_path = std::env::var("KALSHI_PRIVATE_KEY_PATH")
+                .expect("KALSHI_PRIVATE_KEY or KALSHI_PRIVATE_KEY_PATH required");
+            KalshiAuth::from_pem_file(key_id, pem_path)
+                .expect("load auth from KALSHI_PRIVATE_KEY_PATH")
+        }
+    }
 
     #[test]
     fn signing_message_strips_query() {
@@ -121,8 +140,7 @@ mod tests {
 
     #[test]
     fn signature_verifies_with_private_key() {
-        let pem_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("test_key.pem");
-        let auth = KalshiAuth::from_pem_file("test-key", pem_path).expect("load test key");
+        let auth = load_test_auth();
         let headers = auth
             .build_headers("GET", "/trade-api/v2/markets")
             .expect("build headers");

@@ -436,8 +436,8 @@ impl KalshiWsClient {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::KalshiEnvironment;
     use crate::ws::types::WsChannel;
-    use crate::{KalshiAuth, KalshiEnvironment};
     use tokio::time::Duration;
     use tokio_tungstenite::tungstenite::Message;
 
@@ -521,12 +521,7 @@ mod tests {
 
     #[tokio::test]
     async fn reconnect_emits_reconnected_event() {
-        dotenvy::from_filename(".env.test").ok();
-        let auth = KalshiAuth::from_pem_file(
-            std::env::var("KALSHI_KEY_ID").expect("KALSHI_KEY_ID required"),
-            std::env::var("KALSHI_PRIVATE_KEY_PATH").expect("KALSHI_PRIVATE_KEY_PATH required"),
-        )
-        .expect("load auth");
+        let auth = crate::auth::tests::load_test_auth();
 
         let env = KalshiEnvironment::demo();
         let config = WsReconnectConfig {
