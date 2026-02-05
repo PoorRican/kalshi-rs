@@ -14,6 +14,8 @@ pub fn load_auth() -> KalshiAuth {
 
     // Try loading from content first (CI), then from file path (local dev)
     if let Ok(pem_content) = std::env::var("KALSHI_PRIVATE_KEY") {
+        // Unescape \n to real newlines (common in .env files and CI secrets)
+        let pem_content = pem_content.replace("\\n", "\n");
         KalshiAuth::from_pem_str(key_id, &pem_content).expect("Failed to load auth from content")
     } else {
         let pem_path = std::env::var("KALSHI_PRIVATE_KEY_PATH")
