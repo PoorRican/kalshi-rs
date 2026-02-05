@@ -1,12 +1,12 @@
-use crate::{KalshiAuth, KalshiEnvironment, KalshiError, REST_PREFIX};
 use crate::rest::types::*;
 use crate::types::ErrorResponse;
+use crate::{KalshiAuth, KalshiEnvironment, KalshiError, REST_PREFIX};
 
 use futures::future::BoxFuture;
 use futures::stream::{self, Stream};
 use reqwest::header::{HeaderMap, HeaderName, HeaderValue};
 use reqwest::{Client, Method};
-use serde::{de::DeserializeOwned, Serialize};
+use serde::{Serialize, de::DeserializeOwned};
 use std::collections::VecDeque;
 use std::sync::Arc;
 use tokio::sync::Mutex;
@@ -113,7 +113,11 @@ impl RateLimiter {
 
         let mut last = lock.lock().await;
         let now = Instant::now();
-        let scheduled = if *last + interval > now { *last + interval } else { now };
+        let scheduled = if *last + interval > now {
+            *last + interval
+        } else {
+            now
+        };
         *last = scheduled;
         drop(last);
 
@@ -149,7 +153,9 @@ pub struct CursorPager<T> {
     cursor: Option<String>,
     done: bool,
     fetch: Box<
-        dyn FnMut(Option<String>) -> BoxFuture<'static, Result<(Vec<T>, Option<String>), KalshiError>>
+        dyn FnMut(
+                Option<String>,
+            ) -> BoxFuture<'static, Result<(Vec<T>, Option<String>), KalshiError>>
             + Send,
     >,
 }
@@ -157,7 +163,9 @@ pub struct CursorPager<T> {
 impl<T> CursorPager<T> {
     pub fn new<F>(cursor: Option<String>, fetch: F) -> Self
     where
-        F: FnMut(Option<String>) -> BoxFuture<'static, Result<(Vec<T>, Option<String>), KalshiError>>
+        F: FnMut(
+                Option<String>,
+            ) -> BoxFuture<'static, Result<(Vec<T>, Option<String>), KalshiError>>
             + Send
             + 'static,
     {
@@ -329,7 +337,8 @@ impl KalshiRestClient {
         );
         headers.insert(
             HeaderName::from_static("kalshi-access-timestamp"),
-            HeaderValue::from_str(&h.timestamp_ms).map_err(|e| KalshiError::Header(e.to_string()))?,
+            HeaderValue::from_str(&h.timestamp_ms)
+                .map_err(|e| KalshiError::Header(e.to_string()))?,
         );
         headers.insert(
             HeaderName::from_static("kalshi-access-signature"),
@@ -356,7 +365,10 @@ impl KalshiRestClient {
         let mut headers = HeaderMap::new();
 
         if require_auth {
-            let auth = self.auth.as_ref().ok_or(KalshiError::AuthRequired("REST endpoint"))?;
+            let auth = self
+                .auth
+                .as_ref()
+                .ok_or(KalshiError::AuthRequired("REST endpoint"))?;
             // IMPORTANT: sign the path without query parameters
             Self::insert_auth_headers(&mut headers, auth, &method, full_path)?;
         }
@@ -386,7 +398,11 @@ impl KalshiRestClient {
             return Err(build_http_error(status, &bytes, request_id));
         }
 
-        let body_bytes = if bytes.is_empty() { b"{}" } else { bytes.as_ref() };
+        let body_bytes = if bytes.is_empty() {
+            b"{}"
+        } else {
+            bytes.as_ref()
+        };
         Ok(serde_json::from_slice::<T>(body_bytes)?)
     }
 
@@ -395,42 +411,99 @@ impl KalshiRestClient {
     // ----------------------------
 
     /// GET /series
-    pub async fn get_series_list(&self, params: GetSeriesListParams) -> Result<GetSeriesListResponse, KalshiError> {
+    pub async fn get_series_list(
+        &self,
+        params: GetSeriesListParams,
+    ) -> Result<GetSeriesListResponse, KalshiError> {
         let path = Self::full_path("/series");
-        self.send(Method::GET, &path, Some(&params), Option::<&()>::None, false).await
+        self.send(
+            Method::GET,
+            &path,
+            Some(&params),
+            Option::<&()>::None,
+            false,
+        )
+        .await
     }
 
     /// GET /series/{series_ticker}
     pub async fn get_series(&self, series_ticker: &str) -> Result<GetSeriesResponse, KalshiError> {
         let path = Self::full_path(&format!("/series/{series_ticker}"));
-        self.send(Method::GET, &path, Option::<&()>::None, Option::<&()>::None, false).await
+        self.send(
+            Method::GET,
+            &path,
+            Option::<&()>::None,
+            Option::<&()>::None,
+            false,
+        )
+        .await
     }
 
     /// GET /events  (excludes multivariate events)
-    pub async fn get_events(&self, params: GetEventsParams) -> Result<GetEventsResponse, KalshiError> {
+    pub async fn get_events(
+        &self,
+        params: GetEventsParams,
+    ) -> Result<GetEventsResponse, KalshiError> {
         params.validate()?;
         let path = Self::full_path("/events");
-        self.send(Method::GET, &path, Some(&params), Option::<&()>::None, false).await
+        self.send(
+            Method::GET,
+            &path,
+            Some(&params),
+            Option::<&()>::None,
+            false,
+        )
+        .await
     }
 
     /// GET /events/{event_ticker}
-    pub async fn get_event(&self, event_ticker: &str, with_nested_markets: Option<bool>) -> Result<GetEventResponse, KalshiError> {
+    pub async fn get_event(
+        &self,
+        event_ticker: &str,
+        with_nested_markets: Option<bool>,
+    ) -> Result<GetEventResponse, KalshiError> {
         let path = Self::full_path(&format!("/events/{event_ticker}"));
-        let params = GetEventParams { with_nested_markets };
-        self.send(Method::GET, &path, Some(&params), Option::<&()>::None, false).await
+        let params = GetEventParams {
+            with_nested_markets,
+        };
+        self.send(
+            Method::GET,
+            &path,
+            Some(&params),
+            Option::<&()>::None,
+            false,
+        )
+        .await
     }
 
     /// GET /markets
-    pub async fn get_markets(&self, params: GetMarketsParams) -> Result<GetMarketsResponse, KalshiError> {
+    pub async fn get_markets(
+        &self,
+        params: GetMarketsParams,
+    ) -> Result<GetMarketsResponse, KalshiError> {
         params.validate()?;
         let path = Self::full_path("/markets");
-        self.send(Method::GET, &path, Some(&params), Option::<&()>::None, false).await
+        self.send(
+            Method::GET,
+            &path,
+            Some(&params),
+            Option::<&()>::None,
+            false,
+        )
+        .await
     }
 
     /// GET /markets/{ticker}
     pub async fn get_market(&self, market_ticker: &str) -> Result<GetMarketResponse, KalshiError> {
         let path = Self::full_path(&format!("/markets/{market_ticker}"));
-        self.send(Method::GET, &path, Option::<&()>::None, Option::<&()>::None, false).await
+        self.send(
+            Method::GET,
+            &path,
+            Option::<&()>::None,
+            Option::<&()>::None,
+            false,
+        )
+        .await
     }
 
     /// GET /markets/{ticker}/orderbook
@@ -441,37 +514,86 @@ impl KalshiRestClient {
     ) -> Result<GetMarketOrderbookResponse, KalshiError> {
         let path = Self::full_path(&format!("/markets/{market_ticker}/orderbook"));
         let params = GetMarketOrderbookParams { depth };
-        self.send(Method::GET, &path, Some(&params), Option::<&()>::None, false).await
+        self.send(
+            Method::GET,
+            &path,
+            Some(&params),
+            Option::<&()>::None,
+            false,
+        )
+        .await
     }
 
     /// GET /markets/trades
-    pub async fn get_trades(&self, params: GetTradesParams) -> Result<GetTradesResponse, KalshiError> {
+    pub async fn get_trades(
+        &self,
+        params: GetTradesParams,
+    ) -> Result<GetTradesResponse, KalshiError> {
         let path = Self::full_path("/markets/trades");
-        self.send(Method::GET, &path, Some(&params), Option::<&()>::None, false).await
+        self.send(
+            Method::GET,
+            &path,
+            Some(&params),
+            Option::<&()>::None,
+            false,
+        )
+        .await
     }
 
     /// GET /exchange/status
     pub async fn get_exchange_status(&self) -> Result<GetExchangeStatusResponse, KalshiError> {
         let path = Self::full_path("/exchange/status");
-        self.send(Method::GET, &path, Option::<&()>::None, Option::<&()>::None, false).await
+        self.send(
+            Method::GET,
+            &path,
+            Option::<&()>::None,
+            Option::<&()>::None,
+            false,
+        )
+        .await
     }
 
     /// GET /exchange/announcements
-    pub async fn get_exchange_announcements(&self) -> Result<GetExchangeAnnouncementsResponse, KalshiError> {
+    pub async fn get_exchange_announcements(
+        &self,
+    ) -> Result<GetExchangeAnnouncementsResponse, KalshiError> {
         let path = Self::full_path("/exchange/announcements");
-        self.send(Method::GET, &path, Option::<&()>::None, Option::<&()>::None, false).await
+        self.send(
+            Method::GET,
+            &path,
+            Option::<&()>::None,
+            Option::<&()>::None,
+            false,
+        )
+        .await
     }
 
     /// GET /exchange/schedule
     pub async fn get_exchange_schedule(&self) -> Result<GetExchangeScheduleResponse, KalshiError> {
         let path = Self::full_path("/exchange/schedule");
-        self.send(Method::GET, &path, Option::<&()>::None, Option::<&()>::None, false).await
+        self.send(
+            Method::GET,
+            &path,
+            Option::<&()>::None,
+            Option::<&()>::None,
+            false,
+        )
+        .await
     }
 
     /// GET /exchange/user_data_timestamp
-    pub async fn get_user_data_timestamp(&self) -> Result<GetUserDataTimestampResponse, KalshiError> {
+    pub async fn get_user_data_timestamp(
+        &self,
+    ) -> Result<GetUserDataTimestampResponse, KalshiError> {
         let path = Self::full_path("/exchange/user_data_timestamp");
-        self.send(Method::GET, &path, Option::<&()>::None, Option::<&()>::None, false).await
+        self.send(
+            Method::GET,
+            &path,
+            Option::<&()>::None,
+            Option::<&()>::None,
+            false,
+        )
+        .await
     }
 
     /// GET /series/fee_changes
@@ -480,7 +602,14 @@ impl KalshiRestClient {
         params: GetSeriesFeeChangesParams,
     ) -> Result<GetSeriesFeeChangesResponse, KalshiError> {
         let path = Self::full_path("/series/fee_changes");
-        self.send(Method::GET, &path, Some(&params), Option::<&()>::None, false).await
+        self.send(
+            Method::GET,
+            &path,
+            Some(&params),
+            Option::<&()>::None,
+            false,
+        )
+        .await
     }
 
     // ----------------------------
@@ -490,64 +619,122 @@ impl KalshiRestClient {
     /// GET /portfolio/balance
     pub async fn get_balance(&self) -> Result<GetBalanceResponse, KalshiError> {
         let path = Self::full_path("/portfolio/balance");
-        self.send(Method::GET, &path, Option::<&()>::None, Option::<&()>::None, true).await
+        self.send(
+            Method::GET,
+            &path,
+            Option::<&()>::None,
+            Option::<&()>::None,
+            true,
+        )
+        .await
     }
 
     /// GET /portfolio/positions
-    pub async fn get_positions(&self, params: GetPositionsParams) -> Result<GetPositionsResponse, KalshiError> {
+    pub async fn get_positions(
+        &self,
+        params: GetPositionsParams,
+    ) -> Result<GetPositionsResponse, KalshiError> {
         params.validate()?;
         let path = Self::full_path("/portfolio/positions");
-        self.send(Method::GET, &path, Some(&params), Option::<&()>::None, true).await
+        self.send(Method::GET, &path, Some(&params), Option::<&()>::None, true)
+            .await
     }
 
     /// GET /portfolio/orders
-    pub async fn get_orders(&self, params: GetOrdersParams) -> Result<GetOrdersResponse, KalshiError> {
+    pub async fn get_orders(
+        &self,
+        params: GetOrdersParams,
+    ) -> Result<GetOrdersResponse, KalshiError> {
         params.validate()?;
         let path = Self::full_path("/portfolio/orders");
-        self.send(Method::GET, &path, Some(&params), Option::<&()>::None, true).await
+        self.send(Method::GET, &path, Some(&params), Option::<&()>::None, true)
+            .await
     }
 
     /// POST /portfolio/orders
-    pub async fn create_order(&self, body: CreateOrderRequest) -> Result<CreateOrderResponse, KalshiError> {
+    pub async fn create_order(
+        &self,
+        body: CreateOrderRequest,
+    ) -> Result<CreateOrderResponse, KalshiError> {
         let path = Self::full_path("/portfolio/orders");
         body.validate()?;
-        self.send(Method::POST, &path, Option::<&()>::None, Some(&body), true).await
+        self.send(Method::POST, &path, Option::<&()>::None, Some(&body), true)
+            .await
     }
 
     /// DELETE /portfolio/orders/{order_id}  (optional `subaccount` query param)
-    pub async fn cancel_order(&self, order_id: &str, params: CancelOrderParams) -> Result<CancelOrderResponse, KalshiError> {
+    pub async fn cancel_order(
+        &self,
+        order_id: &str,
+        params: CancelOrderParams,
+    ) -> Result<CancelOrderResponse, KalshiError> {
         let path = Self::full_path(&format!("/portfolio/orders/{order_id}"));
-        self.send(Method::DELETE, &path, Some(&params), Option::<&()>::None, true).await
+        self.send(
+            Method::DELETE,
+            &path,
+            Some(&params),
+            Option::<&()>::None,
+            true,
+        )
+        .await
     }
 
     /// GET /portfolio/fills
     pub async fn get_fills(&self, params: GetFillsParams) -> Result<GetFillsResponse, KalshiError> {
         let path = Self::full_path("/portfolio/fills");
-        self.send(Method::GET, &path, Some(&params), Option::<&()>::None, true).await
+        self.send(Method::GET, &path, Some(&params), Option::<&()>::None, true)
+            .await
     }
 
     /// GET /portfolio/settlements
-    pub async fn get_settlements(&self, params: GetSettlementsParams) -> Result<GetSettlementsResponse, KalshiError> {
+    pub async fn get_settlements(
+        &self,
+        params: GetSettlementsParams,
+    ) -> Result<GetSettlementsResponse, KalshiError> {
         let path = Self::full_path("/portfolio/settlements");
-        self.send(Method::GET, &path, Some(&params), Option::<&()>::None, true).await
+        self.send(Method::GET, &path, Some(&params), Option::<&()>::None, true)
+            .await
     }
 
     /// GET /account/limits
     pub async fn get_account_api_limits(&self) -> Result<GetAccountApiLimitsResponse, KalshiError> {
         let path = Self::full_path("/account/limits");
-        self.send(Method::GET, &path, Option::<&()>::None, Option::<&()>::None, true).await
+        self.send(
+            Method::GET,
+            &path,
+            Option::<&()>::None,
+            Option::<&()>::None,
+            true,
+        )
+        .await
     }
 
     /// POST /portfolio/subaccounts
     pub async fn create_subaccount(&self) -> Result<CreateSubaccountResponse, KalshiError> {
         let path = Self::full_path("/portfolio/subaccounts");
-        self.send(Method::POST, &path, Option::<&()>::None, Option::<&()>::None, true).await
+        self.send(
+            Method::POST,
+            &path,
+            Option::<&()>::None,
+            Option::<&()>::None,
+            true,
+        )
+        .await
     }
 
     /// GET /portfolio/subaccounts/balances
-    pub async fn get_subaccount_balances(&self) -> Result<GetSubaccountBalancesResponse, KalshiError> {
+    pub async fn get_subaccount_balances(
+        &self,
+    ) -> Result<GetSubaccountBalancesResponse, KalshiError> {
         let path = Self::full_path("/portfolio/subaccounts/balances");
-        self.send(Method::GET, &path, Option::<&()>::None, Option::<&()>::None, true).await
+        self.send(
+            Method::GET,
+            &path,
+            Option::<&()>::None,
+            Option::<&()>::None,
+            true,
+        )
+        .await
     }
 
     /// POST /portfolio/subaccounts/transfer
@@ -556,7 +743,8 @@ impl KalshiRestClient {
         body: ApplySubaccountTransferRequest,
     ) -> Result<ApplySubaccountTransferResponse, KalshiError> {
         let path = Self::full_path("/portfolio/subaccounts/transfer");
-        self.send(Method::POST, &path, Option::<&()>::None, Some(&body), true).await
+        self.send(Method::POST, &path, Option::<&()>::None, Some(&body), true)
+            .await
     }
 
     /// GET /portfolio/subaccounts/transfers
@@ -565,7 +753,8 @@ impl KalshiRestClient {
         params: GetSubaccountTransfersParams,
     ) -> Result<GetSubaccountTransfersResponse, KalshiError> {
         let path = Self::full_path("/portfolio/subaccounts/transfers");
-        self.send(Method::GET, &path, Some(&params), Option::<&()>::None, true).await
+        self.send(Method::GET, &path, Some(&params), Option::<&()>::None, true)
+            .await
     }
 
     /// Generic cursor pagination helper.
@@ -818,7 +1007,10 @@ impl KalshiRestClient {
     }
 
     /// Fetch all pages for markets using cursor pagination.
-    pub async fn get_markets_all(&self, params: GetMarketsParams) -> Result<Vec<Market>, KalshiError> {
+    pub async fn get_markets_all(
+        &self,
+        params: GetMarketsParams,
+    ) -> Result<Vec<Market>, KalshiError> {
         self.paginate_cursor(params.cursor.clone(), |cursor| {
             let mut page_params = params.clone();
             page_params.cursor = cursor;
@@ -831,7 +1023,10 @@ impl KalshiRestClient {
     }
 
     /// Fetch all pages for events using cursor pagination.
-    pub async fn get_events_all(&self, params: GetEventsParams) -> Result<Vec<EventData>, KalshiError> {
+    pub async fn get_events_all(
+        &self,
+        params: GetEventsParams,
+    ) -> Result<Vec<EventData>, KalshiError> {
         self.paginate_cursor(params.cursor.clone(), |cursor| {
             let mut page_params = params.clone();
             page_params.cursor = cursor;
@@ -879,12 +1074,16 @@ mod tests {
     use futures::stream::TryStreamExt;
     use reqwest::StatusCode;
     use std::sync::Arc;
-    use tokio::time::{timeout, Duration};
+    use tokio::time::{Duration, timeout};
 
     #[test]
     fn http_error_parses_json_body() {
         let body = br#"{"code":"rate_limit","message":"too fast"}"#;
-        let err = build_http_error(StatusCode::TOO_MANY_REQUESTS, body, Some("req-1".to_string()));
+        let err = build_http_error(
+            StatusCode::TOO_MANY_REQUESTS,
+            body,
+            Some("req-1".to_string()),
+        );
         match err {
             KalshiError::Http {
                 status,
@@ -933,9 +1132,12 @@ mod tests {
         timeout(Duration::from_millis(10), limiter.wait(RateLimitKind::Read))
             .await
             .expect("read wait timed out");
-        timeout(Duration::from_millis(10), limiter.wait(RateLimitKind::Write))
-            .await
-            .expect("write wait timed out");
+        timeout(
+            Duration::from_millis(10),
+            limiter.wait(RateLimitKind::Write),
+        )
+        .await
+        .expect("write wait timed out");
     }
 
     #[tokio::test]
@@ -970,14 +1172,9 @@ mod tests {
 
     #[tokio::test]
     async fn cursor_pager_returns_pages_in_order() {
-        let mut pages = VecDeque::from(vec![
-            (vec![1, 2], Some("c1".to_string())),
-            (vec![3], None),
-        ]);
+        let mut pages = VecDeque::from(vec![(vec![1, 2], Some("c1".to_string())), (vec![3], None)]);
         let mut pager = CursorPager::new(None, move |_cursor| {
-            let page = pages
-                .pop_front()
-                .unwrap_or((Vec::<i32>::new(), None));
+            let page = pages.pop_front().unwrap_or((Vec::<i32>::new(), None));
             Box::pin(async move { Ok(page) })
         });
 
@@ -1000,16 +1197,11 @@ mod tests {
         let call_count_ref = Arc::clone(&call_count);
         let pager = CursorPager::new(None, move |_cursor| {
             call_count_ref.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-            let page = pages
-                .pop_front()
-                .unwrap_or((Vec::<i32>::new(), None));
+            let page = pages.pop_front().unwrap_or((Vec::<i32>::new(), None));
             Box::pin(async move { Ok(page) })
         });
 
-        let items: Vec<i32> = stream_items(pager, Some(3))
-            .try_collect()
-            .await
-            .unwrap();
+        let items: Vec<i32> = stream_items(pager, Some(3)).try_collect().await.unwrap();
 
         assert_eq!(items, vec![1, 2, 3]);
         // Should only fetch as many pages as needed to reach 3 items.

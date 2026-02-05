@@ -1,5 +1,4 @@
 /// Example of using the Public REST endpoints: lists open markets
-
 use kalshi::{GetMarketsParams, KalshiEnvironment, KalshiRestClient, MarketStatus};
 
 #[tokio::main]
@@ -18,4 +17,3 @@ async fn main() -> anyhow::Result<()> {
     println!("markets: {}", resp.markets.len());
     Ok(())
 }
-

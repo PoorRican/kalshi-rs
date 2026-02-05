@@ -2,7 +2,6 @@
 ///
 /// Demonstrates parallel stream usage with try_join_all for efficient
 /// multi-event market lookups.
-
 use futures::future::try_join_all;
 use futures::stream::TryStreamExt;
 use kalshi::{GetMarketsParams, KalshiEnvironment, KalshiRestClient, Market};

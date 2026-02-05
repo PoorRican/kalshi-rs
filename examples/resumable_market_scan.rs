@@ -2,7 +2,6 @@
 ///
 /// Demonstrates saving and restoring pagination state across sessions.
 /// Run multiple times to see it resume from the last checkpoint.
-
 use kalshi::{GetMarketsParams, KalshiEnvironment, KalshiRestClient, MarketStatus};
 use std::fs;
 
@@ -38,7 +37,10 @@ async fn main() -> anyhow::Result<()> {
         }
 
         if processed >= 500 {
-            println!("Session limit reached ({} markets) - resume later", processed);
+            println!(
+                "Session limit reached ({} markets) - resume later",
+                processed
+            );
             return Ok(());
         }
     }

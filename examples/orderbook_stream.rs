@@ -6,7 +6,6 @@
 /// 4. Prints each delta update via debug logging
 ///
 /// Requires KALSHI_KEY_ID and KALSHI_PRIVATE_KEY_PATH env vars (or .env file)
-
 use kalshi::{
     GetMarketsParams, KalshiAuth, KalshiEnvironment, KalshiRestClient, KalshiWsClient, Market,
     MarketStatus, MveFilter, WsDataMessage, WsEvent, WsMessage, WsReconnectConfig,
@@ -48,7 +47,11 @@ async fn main() -> anyhow::Result<()> {
 
         print!(".");
 
-        if let Some(m) = resp.markets.into_iter().find(|m| get_volume(m) > MIN_VOLUME_24H) {
+        if let Some(m) = resp
+            .markets
+            .into_iter()
+            .find(|m| get_volume(m) > MIN_VOLUME_24H)
+        {
             target_market = Some(m);
             break;
         }
@@ -76,7 +79,11 @@ async fn main() -> anyhow::Result<()> {
         .as_deref()
         .ok_or_else(|| anyhow::anyhow!("Market missing event_ticker"))?;
 
-    println!("Found event: {} (volume: {})", event_ticker, get_volume(&target_market));
+    println!(
+        "Found event: {} (volume: {})",
+        event_ticker,
+        get_volume(&target_market)
+    );
 
     // Step 2: Fetch all markets for this event
     let event_markets = client
@@ -94,7 +101,11 @@ async fn main() -> anyhow::Result<()> {
         .map(|m| m.ticker.clone())
         .collect();
 
-    println!("Subscribing to {} markets: {:?}", market_tickers.len(), market_tickers);
+    println!(
+        "Subscribing to {} markets: {:?}",
+        market_tickers.len(),
+        market_tickers
+    );
 
     // Step 3: Connect authenticated WebSocket
     let auth = KalshiAuth::from_pem_file(
@@ -132,11 +143,7 @@ async fn main() -> anyhow::Result<()> {
                 WsMessage::Data(WsDataMessage::OrderbookDelta { msg, seq, .. }) => {
                     println!(
                         "[DELTA] {} | {}@{} {:+} | seq={:?}",
-                        msg.market_ticker,
-                        msg.side,
-                        msg.price,
-                        msg.delta,
-                        seq
+                        msg.market_ticker, msg.side, msg.price, msg.delta, seq
                     );
                 }
                 WsMessage::Subscribed { sid, .. } => println!("[SUBSCRIBED] sid={:?}", sid),

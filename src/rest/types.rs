@@ -1,8 +1,9 @@
 use crate::error::KalshiError;
 use crate::types::{
-    deserialize_null_as_empty_vec, deserialize_string_or_number, serialize_csv_opt, BuySell,
-    EventStatus, FeeType, FixedPointCount, FixedPointDollars, MarketStatus, MveFilter, OrderStatus,
-    OrderType, PositionCountFilter, SelfTradePreventionType, TimeInForce, TradeTakerSide, YesNo,
+    BuySell, EventStatus, FeeType, FixedPointCount, FixedPointDollars, MarketStatus, MveFilter,
+    OrderStatus, OrderType, PositionCountFilter, SelfTradePreventionType, TimeInForce,
+    TradeTakerSide, YesNo, deserialize_null_as_empty_vec, deserialize_string_or_number,
+    serialize_csv_opt,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
@@ -118,14 +119,14 @@ pub struct GetEventsParams {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub with_nested_markets: Option<bool>, // default false
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub with_milestones: Option<bool>,     // default false
+    pub with_milestones: Option<bool>, // default false
 
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub status: Option<EventStatus>,       // open|closed|settled
+    pub status: Option<EventStatus>, // open|closed|settled
     #[serde(skip_serializing_if = "Option::is_none")]
     pub series_ticker: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub min_close_ts: Option<i64>,         // seconds since epoch
+    pub min_close_ts: Option<i64>, // seconds since epoch
 }
 
 impl GetEventsParams {
@@ -387,7 +388,10 @@ pub struct GetMarketsParams {
     pub cursor: Option<String>,
 
     /// Event tickers comma-separated (max 10)
-    #[serde(skip_serializing_if = "Option::is_none", serialize_with = "serialize_csv_opt")]
+    #[serde(
+        skip_serializing_if = "Option::is_none",
+        serialize_with = "serialize_csv_opt"
+    )]
     pub event_ticker: Option<Vec<String>>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -417,7 +421,10 @@ pub struct GetMarketsParams {
     pub status: Option<MarketStatus>,
 
     /// Market tickers comma-separated.
-    #[serde(skip_serializing_if = "Option::is_none", serialize_with = "serialize_csv_opt")]
+    #[serde(
+        skip_serializing_if = "Option::is_none",
+        serialize_with = "serialize_csv_opt"
+    )]
     pub tickers: Option<Vec<String>>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -473,27 +480,47 @@ impl GetMarketsParams {
             }
             if matches!(self.mve_filter, Some(MveFilter::Only)) {
                 return Err(KalshiError::InvalidParams(
-                    "GET /markets: with min_updated_ts, only mve_filter=exclude is allowed".to_string(),
+                    "GET /markets: with min_updated_ts, only mve_filter=exclude is allowed"
+                        .to_string(),
                 ));
             }
         }
 
         if created {
-            if matches!(self.status, Some(MarketStatus::Closed | MarketStatus::Settled | MarketStatus::Paused)) {
+            if matches!(
+                self.status,
+                Some(MarketStatus::Closed | MarketStatus::Settled | MarketStatus::Paused)
+            ) {
                 return Err(KalshiError::InvalidParams(
                     "GET /markets: created_ts filters are only compatible with status unopened/open or no status".to_string(),
                 ));
             }
         }
         if close {
-            if matches!(self.status, Some(MarketStatus::Unopened | MarketStatus::Open | MarketStatus::Settled | MarketStatus::Paused)) {
+            if matches!(
+                self.status,
+                Some(
+                    MarketStatus::Unopened
+                        | MarketStatus::Open
+                        | MarketStatus::Settled
+                        | MarketStatus::Paused
+                )
+            ) {
                 return Err(KalshiError::InvalidParams(
                     "GET /markets: close_ts filters are only compatible with status closed or no status".to_string(),
                 ));
             }
         }
         if settled {
-            if matches!(self.status, Some(MarketStatus::Unopened | MarketStatus::Open | MarketStatus::Closed | MarketStatus::Paused)) {
+            if matches!(
+                self.status,
+                Some(
+                    MarketStatus::Unopened
+                        | MarketStatus::Open
+                        | MarketStatus::Closed
+                        | MarketStatus::Paused
+                )
+            ) {
                 return Err(KalshiError::InvalidParams(
                     "GET /markets: settled_ts filters are only compatible with status settled or no status".to_string(),
                 ));
@@ -747,14 +774,20 @@ pub struct GetPositionsParams {
     pub limit: Option<u32>, // default 100, max 1000
 
     /// CSV of non-zero filters (position,total_traded)
-    #[serde(skip_serializing_if = "Option::is_none", serialize_with = "serialize_csv_opt")]
+    #[serde(
+        skip_serializing_if = "Option::is_none",
+        serialize_with = "serialize_csv_opt"
+    )]
     pub count_filter: Option<Vec<PositionCountFilter>>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub ticker: Option<String>,
 
     /// CSV max 10
-    #[serde(skip_serializing_if = "Option::is_none", serialize_with = "serialize_csv_opt")]
+    #[serde(
+        skip_serializing_if = "Option::is_none",
+        serialize_with = "serialize_csv_opt"
+    )]
     pub event_ticker: Option<Vec<String>>,
 
     /// 0..=32
@@ -867,7 +900,10 @@ pub struct GetOrdersParams {
     pub ticker: Option<String>,
 
     /// CSV max 10
-    #[serde(skip_serializing_if = "Option::is_none", serialize_with = "serialize_csv_opt")]
+    #[serde(
+        skip_serializing_if = "Option::is_none",
+        serialize_with = "serialize_csv_opt"
+    )]
     pub event_ticker: Option<Vec<String>>,
 
     #[serde(skip_serializing_if = "Option::is_none")]

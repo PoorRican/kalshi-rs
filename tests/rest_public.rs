@@ -9,9 +9,7 @@ use kalshi::{
 async fn test_get_series_list() {
     let client = KalshiRestClient::new(common::demo_env());
     let resp = tokio::time::timeout(common::TEST_TIMEOUT, async {
-        client
-            .get_series_list(GetSeriesListParams::default())
-            .await
+        client.get_series_list(GetSeriesListParams::default()).await
     })
     .await
     .expect("timeout")
@@ -25,9 +23,7 @@ async fn test_get_series_list() {
 async fn test_get_series_by_ticker() {
     let client = KalshiRestClient::new(common::demo_env());
     let list_resp = tokio::time::timeout(common::TEST_TIMEOUT, async {
-        client
-            .get_series_list(GetSeriesListParams::default())
-            .await
+        client.get_series_list(GetSeriesListParams::default()).await
     })
     .await
     .expect("timeout")
