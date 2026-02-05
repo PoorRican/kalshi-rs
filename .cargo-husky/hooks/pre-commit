@@ -5,5 +5,5 @@ set -e
 STAGED_RS_FILES=$(git diff --cached --name-only --diff-filter=ACM | grep '\.rs$' || true)
 
 if [ -n "$STAGED_RS_FILES" ]; then
-    echo "$STAGED_RS_FILES" | xargs rustfmt --check
+    echo "$STAGED_RS_FILES" | xargs rustfmt --edition 2024 --check
 fi
