@@ -4,7 +4,7 @@
 /// of results.
 use chrono::{Duration, Utc};
 use futures::stream::TryStreamExt;
-use kalshi::{GetTradesParams, KalshiEnvironment, KalshiRestClient};
+use kalshi_fast::{GetTradesParams, KalshiEnvironment, KalshiRestClient};
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {

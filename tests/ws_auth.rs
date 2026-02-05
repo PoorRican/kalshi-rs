@@ -1,6 +1,6 @@
 mod common;
 
-use kalshi::{
+use kalshi_fast::{
     GetMarketsParams, KalshiRestClient, KalshiWsLowLevelClient, MarketStatus, WsChannel,
     WsDataMessage, WsMessage, WsSubscriptionParams,
 };

@@ -1,4 +1,4 @@
-use kalshi::{KalshiAuth, KalshiEnvironment};
+use kalshi_fast::{KalshiAuth, KalshiEnvironment};
 use std::time::Duration;
 
 pub const TEST_TIMEOUT: Duration = Duration::from_secs(10);

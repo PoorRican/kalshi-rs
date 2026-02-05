@@ -6,7 +6,7 @@
 /// 4. Prints each delta update via debug logging
 ///
 /// Requires KALSHI_KEY_ID and KALSHI_PRIVATE_KEY_PATH env vars (or .env file)
-use kalshi::{
+use kalshi_fast::{
     GetMarketsParams, KalshiAuth, KalshiEnvironment, KalshiRestClient, KalshiWsClient, Market,
     MarketStatus, MveFilter, WsDataMessage, WsEvent, WsMessage, WsReconnectConfig,
     WsSubscriptionParams,
@@ -119,7 +119,7 @@ async fn main() -> anyhow::Result<()> {
     // Step 4: Subscribe to orderbook deltas
     let sub_id = ws
         .subscribe(WsSubscriptionParams {
-            channels: vec![kalshi::WsChannel::OrderbookDelta],
+            channels: vec![kalshi_fast::WsChannel::OrderbookDelta],
             market_tickers: Some(market_tickers),
             ..Default::default()
         })

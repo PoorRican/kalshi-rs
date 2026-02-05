@@ -1,7 +1,7 @@
 /// Example of using authenticated REST endpoints:
 /// - Gets balance
 /// - Places an order
-use kalshi::{
+use kalshi_fast::{
     BuySell, CreateOrderRequest, GetMarketsParams, KalshiAuth, KalshiEnvironment, KalshiRestClient,
     MarketStatus, OrderType, YesNo,
 };

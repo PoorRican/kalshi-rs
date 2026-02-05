@@ -1,5 +1,5 @@
 /// Example of using the Public REST endpoints: lists open markets
-use kalshi::{GetMarketsParams, KalshiEnvironment, KalshiRestClient, MarketStatus};
+use kalshi_fast::{GetMarketsParams, KalshiEnvironment, KalshiRestClient, MarketStatus};
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {

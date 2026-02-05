@@ -1,6 +1,6 @@
 mod common;
 
-use kalshi::{
+use kalshi_fast::{
     GetFillsParams, GetOrdersParams, GetPositionsParams, GetSettlementsParams,
     GetSubaccountTransfersParams, KalshiError, KalshiRestClient,
 };

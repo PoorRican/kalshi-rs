@@ -4,7 +4,7 @@
 /// batch closed before December 2025. The API has no `max_close_ts` filter,
 /// so we check `close_ts` client-side.
 use chrono::{TimeZone, Utc};
-use kalshi::{EventStatus, GetEventsParams, KalshiEnvironment, KalshiRestClient};
+use kalshi_fast::{EventStatus, GetEventsParams, KalshiEnvironment, KalshiRestClient};
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {

@@ -1,5 +1,5 @@
 use anyhow;
-use kalshi::{
+use kalshi_fast::{
     KalshiAuth, KalshiEnvironment, KalshiWsClient, WsChannel, WsDataMessage, WsEvent, WsMessage,
     WsReconnectConfig, WsSubscriptionParams,
 };

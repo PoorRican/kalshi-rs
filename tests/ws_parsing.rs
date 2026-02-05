@@ -1,6 +1,6 @@
 //! Unit tests for WebSocket message parsing.
 
-use kalshi::{
+use kalshi_fast::{
     MarketStatus, WsCommunications, WsDataMessage, WsEnvelope, WsMessage, WsMsgType,
     WsOrderGroupEventType, WsOrderbookDelta, WsTicker, YesNo,
 };

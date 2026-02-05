@@ -1,6 +1,6 @@
 mod common;
 
-use kalshi::{
+use kalshi_fast::{
     EventStatus, GetEventsParams, GetMarketsParams, GetSeriesFeeChangesParams, GetSeriesListParams,
     GetTradesParams, KalshiRestClient, MarketStatus,
 };

@@ -1,6 +1,6 @@
 mod common;
 
-use kalshi::{KalshiWsLowLevelClient, WsChannel, WsDataMessage, WsMessage, WsSubscriptionParams};
+use kalshi_fast::{KalshiWsLowLevelClient, WsChannel, WsDataMessage, WsMessage, WsSubscriptionParams};
 use std::time::Duration;
 
 // NOTE: Kalshi WebSocket requires authentication for ALL connections,

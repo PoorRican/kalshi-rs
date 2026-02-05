@@ -2,7 +2,7 @@
 ///
 /// Demonstrates saving and restoring pagination state across sessions.
 /// Run multiple times to see it resume from the last checkpoint.
-use kalshi::{GetMarketsParams, KalshiEnvironment, KalshiRestClient, MarketStatus};
+use kalshi_fast::{GetMarketsParams, KalshiEnvironment, KalshiRestClient, MarketStatus};
 use std::fs;
 
 const CURSOR_FILE: &str = "/tmp/market_scan_cursor.txt";

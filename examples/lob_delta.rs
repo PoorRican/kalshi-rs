@@ -1,7 +1,7 @@
 /// Example of using an authenticated WS channel
 ///
 /// This channel is explicitly called out in the docs as being authenticated
-use kalshi::{
+use kalshi_fast::{
     KalshiAuth, KalshiEnvironment, KalshiWsClient, WsChannel, WsEvent, WsReconnectConfig,
     WsSubscriptionParams,
 };

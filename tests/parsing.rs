@@ -1,7 +1,7 @@
 //! Unit tests for REST type serialization/deserialization.
 
 pub(crate) use cargo_husky as _;
-use kalshi::{
+use kalshi_fast::{
     ApplySubaccountTransferResponse, BuySell, CreateOrderRequest, CreateSubaccountResponse,
     ErrorResponse, EventStatus, GetAccountApiLimitsResponse, GetEventsParams,
     GetExchangeAnnouncementsResponse, GetExchangeScheduleResponse, GetExchangeStatusResponse,
@@ -329,7 +329,7 @@ fn get_balance_response_deserializes() {
         "updated_ts": 1700000000
     }"#;
 
-    let resp: kalshi::GetBalanceResponse = serde_json::from_str(json).unwrap();
+    let resp: kalshi_fast::GetBalanceResponse = serde_json::from_str(json).unwrap();
     assert_eq!(resp.balance, 100000);
     assert_eq!(resp.portfolio_value, 50000);
     assert_eq!(resp.updated_ts, 1700000000);
@@ -342,7 +342,7 @@ fn get_markets_response_deserializes() {
         "cursor": "next_cursor_token"
     }"#;
 
-    let resp: kalshi::GetMarketsResponse = serde_json::from_str(json).unwrap();
+    let resp: kalshi_fast::GetMarketsResponse = serde_json::from_str(json).unwrap();
     assert_eq!(resp.markets.len(), 2);
     assert_eq!(resp.cursor, Some("next_cursor_token".into()));
 }
@@ -353,7 +353,7 @@ fn get_series_response_deserializes() {
         "series": {"ticker": "SERIES-1", "title": "Example Series"}
     }"#;
 
-    let resp: kalshi::GetSeriesResponse = serde_json::from_str(json).unwrap();
+    let resp: kalshi_fast::GetSeriesResponse = serde_json::from_str(json).unwrap();
     assert_eq!(resp.series.ticker, "SERIES-1");
     assert_eq!(resp.series.title.as_deref(), Some("Example Series"));
 }
@@ -362,7 +362,7 @@ fn get_series_response_deserializes() {
 fn get_markets_response_deserializes_without_cursor() {
     let json = r#"{"markets": []}"#;
 
-    let resp: kalshi::GetMarketsResponse = serde_json::from_str(json).unwrap();
+    let resp: kalshi_fast::GetMarketsResponse = serde_json::from_str(json).unwrap();
     assert!(resp.markets.is_empty());
     assert!(resp.cursor.is_none());
 }
@@ -374,7 +374,7 @@ fn get_events_response_deserializes() {
         "cursor": null
     }"#;
 
-    let resp: kalshi::GetEventsResponse = serde_json::from_str(json).unwrap();
+    let resp: kalshi_fast::GetEventsResponse = serde_json::from_str(json).unwrap();
     assert_eq!(resp.events.len(), 1);
     assert!(resp.cursor.is_none());
 }
@@ -387,7 +387,7 @@ fn get_positions_response_deserializes() {
         "cursor": "abc123"
     }"#;
 
-    let resp: kalshi::GetPositionsResponse = serde_json::from_str(json).unwrap();
+    let resp: kalshi_fast::GetPositionsResponse = serde_json::from_str(json).unwrap();
     assert_eq!(resp.market_positions.len(), 1);
     assert!(resp.event_positions.is_empty());
     assert_eq!(resp.cursor, Some("abc123".into()));
@@ -401,8 +401,8 @@ fn positions_page_from_response() {
         "cursor": "abc123"
     }"#;
 
-    let resp: kalshi::GetPositionsResponse = serde_json::from_str(json).unwrap();
-    let page: kalshi::PositionsPage = resp.into();
+    let resp: kalshi_fast::GetPositionsResponse = serde_json::from_str(json).unwrap();
+    let page: kalshi_fast::PositionsPage = resp.into();
     assert_eq!(page.market_positions.len(), 1);
     assert_eq!(page.event_positions.len(), 1);
 }
@@ -413,7 +413,7 @@ fn get_orders_response_deserializes() {
         "orders": [{"order_id": "ord-1", "ticker": "MKT-1", "status": "resting"}]
     }"#;
 
-    let resp: kalshi::GetOrdersResponse = serde_json::from_str(json).unwrap();
+    let resp: kalshi_fast::GetOrdersResponse = serde_json::from_str(json).unwrap();
     assert_eq!(resp.orders.len(), 1);
     assert!(resp.cursor.is_none());
 }
@@ -424,7 +424,7 @@ fn create_order_response_deserializes() {
         "order": {"order_id": "ord-123", "ticker": "MKT-1", "status": "resting"}
     }"#;
 
-    let resp: kalshi::CreateOrderResponse = serde_json::from_str(json).unwrap();
+    let resp: kalshi_fast::CreateOrderResponse = serde_json::from_str(json).unwrap();
     assert_eq!(resp.order.order_id, "ord-123");
     assert_eq!(resp.order.ticker, "MKT-1");
 }
@@ -437,7 +437,7 @@ fn cancel_order_response_deserializes() {
         "reduced_by_fp": "5.0"
     }"#;
 
-    let resp: kalshi::CancelOrderResponse = serde_json::from_str(json).unwrap();
+    let resp: kalshi_fast::CancelOrderResponse = serde_json::from_str(json).unwrap();
     assert_eq!(resp.order.status, Some(OrderStatus::Canceled));
     assert_eq!(resp.reduced_by, 5);
     assert_eq!(resp.reduced_by_fp, "5.0");

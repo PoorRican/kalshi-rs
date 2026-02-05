@@ -2,7 +2,7 @@
 ///
 /// Demonstrates authenticated pager usage with statistics accumulation.
 /// Requires KALSHI_KEY_ID and KALSHI_PRIVATE_KEY_PATH environment variables.
-use kalshi::{GetFillsParams, KalshiAuth, KalshiEnvironment, KalshiRestClient};
+use kalshi_fast::{GetFillsParams, KalshiAuth, KalshiEnvironment, KalshiRestClient};
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
