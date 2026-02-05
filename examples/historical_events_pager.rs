@@ -3,7 +3,6 @@
 /// Uses CursorPager for page-by-page control, stopping when all events in a
 /// batch closed before December 2025. The API has no `max_close_ts` filter,
 /// so we check `close_ts` client-side.
-
 use chrono::{TimeZone, Utc};
 use kalshi::{EventStatus, GetEventsParams, KalshiEnvironment, KalshiRestClient};
 
@@ -12,7 +11,10 @@ async fn main() -> anyhow::Result<()> {
     let client = KalshiRestClient::new(KalshiEnvironment::production());
 
     // December 1, 2025 00:00:00 UTC
-    let cutoff_ts = Utc.with_ymd_and_hms(2025, 12, 1, 0, 0, 0).unwrap().timestamp();
+    let cutoff_ts = Utc
+        .with_ymd_and_hms(2025, 12, 1, 0, 0, 0)
+        .unwrap()
+        .timestamp();
 
     let mut pager = client.events_pager(GetEventsParams {
         status: Some(EventStatus::Settled),

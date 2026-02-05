@@ -1,10 +1,10 @@
 use crate::error::KalshiError;
 
-use base64::{engine::general_purpose::STANDARD, Engine as _};
+use base64::{Engine as _, engine::general_purpose::STANDARD};
 use rand::rngs::OsRng;
-use rsa::{pkcs1::DecodeRsaPrivateKey, pkcs8::DecodePrivateKey, RsaPrivateKey};
 use rsa::pss::SigningKey;
 use rsa::signature::{RandomizedSigner, SignatureEncoding};
+use rsa::{RsaPrivateKey, pkcs1::DecodeRsaPrivateKey, pkcs8::DecodePrivateKey};
 use sha2::Sha256;
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -24,7 +24,10 @@ pub struct KalshiAuthHeaders {
 
 impl KalshiAuth {
     /// Load a `.key` PEM file (Kalshi UI downloads a private key as `.key`) :contentReference[oaicite:16]{index=16}
-    pub fn from_pem_file(key_id: impl Into<String>, pem_path: impl AsRef<std::path::Path>) -> Result<Self, KalshiError> {
+    pub fn from_pem_file(
+        key_id: impl Into<String>,
+        pem_path: impl AsRef<std::path::Path>,
+    ) -> Result<Self, KalshiError> {
         let pem = std::fs::read_to_string(pem_path)?;
         Self::from_pem_str(key_id, &pem)
     }
@@ -37,7 +40,10 @@ impl KalshiAuth {
             .or_else(|_| RsaPrivateKey::from_pkcs1_pem(pem))
             .map_err(|e| KalshiError::Crypto(e.to_string()))?;
 
-        Ok(Self { key_id, private_key })
+        Ok(Self {
+            key_id,
+            private_key,
+        })
     }
 
     /// Milliseconds since UNIX epoch, as required by Kalshi auth headers. :contentReference[oaicite:17]{index=17}
@@ -52,7 +58,12 @@ impl KalshiAuth {
     /// Create signature for a request:
     /// message = timestamp + METHOD + path_without_query
     /// signature = RSA-PSS(SHA256), base64 encoded :contentReference[oaicite:18]{index=18}
-    pub fn sign(&self, timestamp_ms: &str, method: &str, path: &str) -> Result<String, KalshiError> {
+    pub fn sign(
+        &self,
+        timestamp_ms: &str,
+        method: &str,
+        path: &str,
+    ) -> Result<String, KalshiError> {
         let message = Self::signing_message(timestamp_ms, method, path);
         let message_bytes = message.as_bytes();
 
@@ -61,8 +72,7 @@ impl KalshiAuth {
 
         // PSS with SHA256 (salt length = digest length) per docs :contentReference[oaicite:19]{index=19}
         let signing_key = SigningKey::<Sha256>::new(self.private_key.clone());
-        let signature = signing_key
-            .sign_with_rng(&mut rng, message_bytes);
+        let signature = signing_key.sign_with_rng(&mut rng, message_bytes);
 
         Ok(STANDARD.encode(signature.to_bytes()))
     }
@@ -75,7 +85,11 @@ impl KalshiAuth {
     }
 
     /// Build the three headers required by Kalshi authenticated endpoints. :contentReference[oaicite:20]{index=20}
-    pub fn build_headers(&self, method: &str, path: &str) -> Result<KalshiAuthHeaders, KalshiError> {
+    pub fn build_headers(
+        &self,
+        method: &str,
+        path: &str,
+    ) -> Result<KalshiAuthHeaders, KalshiError> {
         let timestamp_ms = Self::now_timestamp_ms();
         let signature = self.sign(&timestamp_ms, method, path)?;
 
@@ -90,7 +104,7 @@ impl KalshiAuth {
 #[cfg(test)]
 mod tests {
     use super::KalshiAuth;
-    use base64::{engine::general_purpose::STANDARD, Engine as _};
+    use base64::{Engine as _, engine::general_purpose::STANDARD};
     use rsa::pss::{Signature, VerifyingKey};
     use rsa::signature::Verifier;
     use sha2::Sha256;

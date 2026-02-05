@@ -13,6 +13,6 @@ pub use rest::{CursorPager, KalshiRestClient, RateLimitConfig, RateLimitTier};
 pub use ws::{KalshiWsClient, KalshiWsLowLevelClient, WsEvent, WsReconnectConfig};
 
 // Backwards-compatible type re-exports
-pub use types::*;
 pub use rest::types::*;
+pub use types::*;
 pub use ws::types::*;

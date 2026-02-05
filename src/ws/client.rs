@@ -2,24 +2,23 @@ use crate::auth::KalshiAuth;
 use crate::env::{KalshiEnvironment, WS_PATH};
 use crate::error::KalshiError;
 use crate::ws::types::{
-    validate_subscription, WsEnvelope, WsListSubscriptionsCmd, WsMessage, WsSubscribeCmd,
-    WsSubscriptionParams, WsUnsubscribeCmd, WsUnsubscribeParams, WsUpdateSubscriptionCmd,
-    WsUpdateSubscriptionParams,
+    WsEnvelope, WsListSubscriptionsCmd, WsMessage, WsSubscribeCmd, WsSubscriptionParams,
+    WsUnsubscribeCmd, WsUnsubscribeParams, WsUpdateSubscriptionCmd, WsUpdateSubscriptionParams,
+    validate_subscription,
 };
 
 use futures::{SinkExt, StreamExt};
 
 use rand::random;
 use std::collections::HashMap;
-use tokio::time::{sleep, Duration};
-use tokio_tungstenite::tungstenite::http::{HeaderValue, Request};
-use tokio_tungstenite::tungstenite::Message;
+use tokio::time::{Duration, sleep};
 use tokio_tungstenite::connect_async;
+use tokio_tungstenite::tungstenite::Message;
 use tokio_tungstenite::tungstenite::client::IntoClientRequest;
+use tokio_tungstenite::tungstenite::http::{HeaderValue, Request};
 
-type WsStream = tokio_tungstenite::WebSocketStream<
-    tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>
->;
+type WsStream =
+    tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>;
 
 #[derive(Debug, Clone)]
 pub struct WsReconnectConfig {
@@ -62,7 +61,10 @@ impl SubscriptionTracker {
 
     fn handle_message(&mut self, msg: &WsMessage) {
         match msg {
-            WsMessage::Subscribed { id: Some(id), sid: Some(sid) } => {
+            WsMessage::Subscribed {
+                id: Some(id),
+                sid: Some(sid),
+            } => {
                 if let Some(params) = self.pending.remove(id) {
                     self.active.insert(*sid, params);
                 }
@@ -134,7 +136,10 @@ impl KalshiWsLowLevelClient {
     }
 
     /// Connect with auth headers so you can subscribe to private channels.
-    pub async fn connect_authenticated(env: KalshiEnvironment, auth: KalshiAuth) -> Result<Self, KalshiError> {
+    pub async fn connect_authenticated(
+        env: KalshiEnvironment,
+        auth: KalshiAuth,
+    ) -> Result<Self, KalshiError> {
         let mut req: Request<()> = env
             .ws_url
             .into_client_request()
@@ -149,11 +154,13 @@ impl KalshiWsLowLevelClient {
         );
         req.headers_mut().insert(
             "KALSHI-ACCESS-SIGNATURE",
-            HeaderValue::from_str(&headers.signature).map_err(|e| KalshiError::Header(e.to_string()))?,
+            HeaderValue::from_str(&headers.signature)
+                .map_err(|e| KalshiError::Header(e.to_string()))?,
         );
         req.headers_mut().insert(
             "KALSHI-ACCESS-TIMESTAMP",
-            HeaderValue::from_str(&headers.timestamp_ms).map_err(|e| KalshiError::Header(e.to_string()))?,
+            HeaderValue::from_str(&headers.timestamp_ms)
+                .map_err(|e| KalshiError::Header(e.to_string()))?,
         );
 
         let (ws_stream, _resp) = connect_async(req)
@@ -173,7 +180,9 @@ impl KalshiWsLowLevelClient {
     pub async fn subscribe(&mut self, params: WsSubscriptionParams) -> Result<u64, KalshiError> {
         let needs_auth = params.channels.iter().any(|c| c.is_private());
         if needs_auth && !self.authenticated {
-            return Err(KalshiError::AuthRequired("WebSocket private channel subscription"));
+            return Err(KalshiError::AuthRequired(
+                "WebSocket private channel subscription",
+            ));
         }
 
         validate_subscription(&params)?;
@@ -217,7 +226,10 @@ impl KalshiWsLowLevelClient {
     }
 
     /// Update an existing subscription.
-    pub async fn update_subscription(&mut self, params: WsUpdateSubscriptionParams) -> Result<u64, KalshiError> {
+    pub async fn update_subscription(
+        &mut self,
+        params: WsUpdateSubscriptionParams,
+    ) -> Result<u64, KalshiError> {
         let id = self.next_id;
         self.next_id += 1;
 
@@ -241,7 +253,10 @@ impl KalshiWsLowLevelClient {
         let id = self.next_id;
         self.next_id += 1;
 
-        let cmd = WsListSubscriptionsCmd { id, cmd: "list_subscriptions" };
+        let cmd = WsListSubscriptionsCmd {
+            id,
+            cmd: "list_subscriptions",
+        };
         let text = serde_json::to_string(&cmd)?;
         self.write
             .send(Message::Text(text))
@@ -313,7 +328,8 @@ impl KalshiWsClient {
         auth: KalshiAuth,
         config: WsReconnectConfig,
     ) -> Result<Self, KalshiError> {
-        let client = KalshiWsLowLevelClient::connect_authenticated(env.clone(), auth.clone()).await?;
+        let client =
+            KalshiWsLowLevelClient::connect_authenticated(env.clone(), auth.clone()).await?;
         Ok(Self {
             env,
             auth: Some(auth),
@@ -384,7 +400,8 @@ impl KalshiWsClient {
     async fn reconnect(&mut self) -> Result<(), KalshiError> {
         let new_client = match &self.auth {
             Some(auth) => {
-                KalshiWsLowLevelClient::connect_authenticated(self.env.clone(), auth.clone()).await?
+                KalshiWsLowLevelClient::connect_authenticated(self.env.clone(), auth.clone())
+                    .await?
             }
             None => KalshiWsLowLevelClient::connect(self.env.clone()).await?,
         };
@@ -519,10 +536,9 @@ mod tests {
             jitter: 0.0,
             resubscribe: false,
         };
-        let mut client =
-            KalshiWsClient::connect_authenticated(env, auth, config)
-                .await
-                .expect("connect");
+        let mut client = KalshiWsClient::connect_authenticated(env, auth, config)
+            .await
+            .expect("connect");
 
         // Force close to trigger reconnect on next_event.
         client

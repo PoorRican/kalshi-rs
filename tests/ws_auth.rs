@@ -1,8 +1,8 @@
 mod common;
 
 use kalshi::{
-    GetMarketsParams, KalshiRestClient, KalshiWsLowLevelClient, MarketStatus, WsChannel, WsDataMessage,
-    WsMessage, WsSubscriptionParams,
+    GetMarketsParams, KalshiRestClient, KalshiWsLowLevelClient, MarketStatus, WsChannel,
+    WsDataMessage, WsMessage, WsSubscriptionParams,
 };
 use std::time::Duration;
 

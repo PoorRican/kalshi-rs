@@ -4,8 +4,8 @@ use crate::types::{
     BuySell, FixedPointCount, FixedPointDollars, MarketStatus, TradeTakerSide, YesNo,
 };
 
-use serde::{Deserialize, Serialize};
 use serde::de::{Error as _, Visitor};
+use serde::{Deserialize, Serialize};
 use serde_json::value::RawValue;
 use std::fmt;
 
@@ -197,12 +197,17 @@ impl<'de> Deserialize<'de> for WsMsgType {
                 formatter.write_str("a websocket message type string")
             }
 
-            fn visit_borrowed_str<E: serde::de::Error>(self, value: &'de str) -> Result<Self::Value, E> {
-                Ok(WsMsgType::from_str(value).unwrap_or_else(|| WsMsgType::Unknown(value.to_owned())))
+            fn visit_borrowed_str<E: serde::de::Error>(
+                self,
+                value: &'de str,
+            ) -> Result<Self::Value, E> {
+                Ok(WsMsgType::from_str(value)
+                    .unwrap_or_else(|| WsMsgType::Unknown(value.to_owned())))
             }
 
             fn visit_str<E: serde::de::Error>(self, value: &str) -> Result<Self::Value, E> {
-                Ok(WsMsgType::from_str(value).unwrap_or_else(|| WsMsgType::Unknown(value.to_owned())))
+                Ok(WsMsgType::from_str(value)
+                    .unwrap_or_else(|| WsMsgType::Unknown(value.to_owned())))
             }
 
             fn visit_string<E: serde::de::Error>(self, value: String) -> Result<Self::Value, E> {
@@ -666,13 +671,19 @@ impl WsEnvelope {
                 } else {
                     subscriptions.unwrap_or_default()
                 };
-                Ok(WsMessage::ListSubscriptions { id, subscriptions: subs })
+                Ok(WsMessage::ListSubscriptions {
+                    id,
+                    subscriptions: subs,
+                })
             }
             WsMsgType::Error => {
                 let error = if msg.is_some() {
                     parse_msg(&msg)?
                 } else {
-                    WsError { code: None, message: None }
+                    WsError {
+                        code: None,
+                        message: None,
+                    }
                 };
                 Ok(WsMessage::Error { id, error })
             }
@@ -757,7 +768,10 @@ impl WsEnvelope {
                 msg_type: WsMsgType::Communications,
                 raw: msg,
             }),
-            other => Ok(WsMessage::Unknown { msg_type: other, raw: msg }),
+            other => Ok(WsMessage::Unknown {
+                msg_type: other,
+                raw: msg,
+            }),
         }
     }
 }
@@ -778,28 +792,89 @@ pub struct WsError {
 
 #[derive(Debug, Clone)]
 pub enum WsMessage {
-    Subscribed { id: Option<u64>, sid: Option<u64> },
-    Unsubscribed { id: Option<u64>, sid: Option<u64> },
-    ListSubscriptions { id: Option<u64>, subscriptions: Vec<WsSubscriptionInfo> },
-    Ok { id: Option<u64> },
-    Error { id: Option<u64>, error: WsError },
+    Subscribed {
+        id: Option<u64>,
+        sid: Option<u64>,
+    },
+    Unsubscribed {
+        id: Option<u64>,
+        sid: Option<u64>,
+    },
+    ListSubscriptions {
+        id: Option<u64>,
+        subscriptions: Vec<WsSubscriptionInfo>,
+    },
+    Ok {
+        id: Option<u64>,
+    },
+    Error {
+        id: Option<u64>,
+        error: WsError,
+    },
     Data(WsDataMessage),
-    Unknown { msg_type: WsMsgType, raw: Option<Box<RawValue>> },
+    Unknown {
+        msg_type: WsMsgType,
+        raw: Option<Box<RawValue>>,
+    },
 }
 
 #[derive(Debug, Clone)]
 pub enum WsDataMessage {
-    Ticker { sid: Option<u64>, seq: Option<u64>, msg: WsTicker },
-    TickerV2 { sid: Option<u64>, seq: Option<u64>, msg: WsTickerV2 },
-    Trade { sid: Option<u64>, seq: Option<u64>, msg: WsTrade },
-    OrderbookSnapshot { sid: Option<u64>, seq: Option<u64>, msg: WsOrderbookSnapshot },
-    OrderbookDelta { sid: Option<u64>, seq: Option<u64>, msg: WsOrderbookDelta },
-    Fill { sid: Option<u64>, seq: Option<u64>, msg: WsFill },
-    MarketPositions { sid: Option<u64>, seq: Option<u64>, msg: WsMarketPositions },
-    MarketLifecycleV2 { sid: Option<u64>, seq: Option<u64>, msg: WsMarketLifecycleV2 },
-    Multivariate { sid: Option<u64>, seq: Option<u64>, msg: WsMultivariate },
-    Communications { sid: Option<u64>, seq: Option<u64>, msg: WsCommunications },
-    OrderGroupUpdates { sid: Option<u64>, seq: Option<u64>, msg: WsOrderGroupUpdate },
+    Ticker {
+        sid: Option<u64>,
+        seq: Option<u64>,
+        msg: WsTicker,
+    },
+    TickerV2 {
+        sid: Option<u64>,
+        seq: Option<u64>,
+        msg: WsTickerV2,
+    },
+    Trade {
+        sid: Option<u64>,
+        seq: Option<u64>,
+        msg: WsTrade,
+    },
+    OrderbookSnapshot {
+        sid: Option<u64>,
+        seq: Option<u64>,
+        msg: WsOrderbookSnapshot,
+    },
+    OrderbookDelta {
+        sid: Option<u64>,
+        seq: Option<u64>,
+        msg: WsOrderbookDelta,
+    },
+    Fill {
+        sid: Option<u64>,
+        seq: Option<u64>,
+        msg: WsFill,
+    },
+    MarketPositions {
+        sid: Option<u64>,
+        seq: Option<u64>,
+        msg: WsMarketPositions,
+    },
+    MarketLifecycleV2 {
+        sid: Option<u64>,
+        seq: Option<u64>,
+        msg: WsMarketLifecycleV2,
+    },
+    Multivariate {
+        sid: Option<u64>,
+        seq: Option<u64>,
+        msg: WsMultivariate,
+    },
+    Communications {
+        sid: Option<u64>,
+        seq: Option<u64>,
+        msg: WsCommunications,
+    },
+    OrderGroupUpdates {
+        sid: Option<u64>,
+        seq: Option<u64>,
+        msg: WsOrderGroupUpdate,
+    },
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -858,9 +933,18 @@ pub(crate) fn validate_subscription(params: &WsSubscriptionParams) -> Result<(),
         ));
     }
 
-    let has_orderbook_delta = params.channels.iter().any(|c| matches!(c, WsChannel::OrderbookDelta));
-    let has_market_positions = params.channels.iter().any(|c| matches!(c, WsChannel::MarketPositions));
-    let has_communications = params.channels.iter().any(|c| matches!(c, WsChannel::Communications));
+    let has_orderbook_delta = params
+        .channels
+        .iter()
+        .any(|c| matches!(c, WsChannel::OrderbookDelta));
+    let has_market_positions = params
+        .channels
+        .iter()
+        .any(|c| matches!(c, WsChannel::MarketPositions));
+    let has_communications = params
+        .channels
+        .iter()
+        .any(|c| matches!(c, WsChannel::Communications));
 
     if has_orderbook_delta {
         let has_market_tickers = params
@@ -1027,7 +1111,10 @@ mod tests {
         let env: WsEnvelope = serde_json::from_str(json).unwrap();
         let msg = env.into_message().unwrap();
         match msg {
-            WsMessage::Unknown { msg_type: WsMsgType::Unknown(value), raw } => {
+            WsMessage::Unknown {
+                msg_type: WsMsgType::Unknown(value),
+                raw,
+            } => {
                 assert_eq!(value, "mystery");
                 assert!(raw.is_some());
             }

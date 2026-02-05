@@ -1,10 +1,9 @@
 /// Example of using authenticated REST endpoints:
 /// - Gets balance
 /// - Places an order
-
 use kalshi::{
-    BuySell, CreateOrderRequest, KalshiAuth, KalshiEnvironment, KalshiRestClient, MarketStatus,
-    OrderType, YesNo, GetMarketsParams,
+    BuySell, CreateOrderRequest, GetMarketsParams, KalshiAuth, KalshiEnvironment, KalshiRestClient,
+    MarketStatus, OrderType, YesNo,
 };
 
 #[tokio::main]

@@ -374,19 +374,17 @@ fn ws_rfq_created_message_parses() {
     let env: WsEnvelope = serde_json::from_str(json).unwrap();
     let msg = env.into_message().unwrap();
     match msg {
-        WsMessage::Data(WsDataMessage::Communications { msg, .. }) => {
-            match msg {
-                WsCommunications::RfqCreated(rfq) => {
-                    assert_eq!(rfq.id, "rfq_123");
-                    assert_eq!(rfq.market_ticker, "FED-23DEC-T3.00");
-                    assert!(matches!(
-                        rfq.mve_selected_legs.as_ref().unwrap()[0].side,
-                        Some(YesNo::Yes)
-                    ));
-                }
-                other => panic!("unexpected communications payload: {:?}", other),
+        WsMessage::Data(WsDataMessage::Communications { msg, .. }) => match msg {
+            WsCommunications::RfqCreated(rfq) => {
+                assert_eq!(rfq.id, "rfq_123");
+                assert_eq!(rfq.market_ticker, "FED-23DEC-T3.00");
+                assert!(matches!(
+                    rfq.mve_selected_legs.as_ref().unwrap()[0].side,
+                    Some(YesNo::Yes)
+                ));
             }
-        }
+            other => panic!("unexpected communications payload: {:?}", other),
+        },
         other => panic!("unexpected: {:?}", other),
     }
 }
@@ -406,15 +404,13 @@ fn ws_rfq_deleted_message_parses() {
     let env: WsEnvelope = serde_json::from_str(json).unwrap();
     let msg = env.into_message().unwrap();
     match msg {
-        WsMessage::Data(WsDataMessage::Communications { msg, .. }) => {
-            match msg {
-                WsCommunications::RfqDeleted(rfq) => {
-                    assert_eq!(rfq.id, "rfq_124");
-                    assert_eq!(rfq.creator_id, "creator");
-                }
-                other => panic!("unexpected communications payload: {:?}", other),
+        WsMessage::Data(WsDataMessage::Communications { msg, .. }) => match msg {
+            WsCommunications::RfqDeleted(rfq) => {
+                assert_eq!(rfq.id, "rfq_124");
+                assert_eq!(rfq.creator_id, "creator");
             }
-        }
+            other => panic!("unexpected communications payload: {:?}", other),
+        },
         other => panic!("unexpected: {:?}", other),
     }
 }
@@ -439,15 +435,13 @@ fn ws_quote_created_message_parses() {
     let env: WsEnvelope = serde_json::from_str(json).unwrap();
     let msg = env.into_message().unwrap();
     match msg {
-        WsMessage::Data(WsDataMessage::Communications { msg, .. }) => {
-            match msg {
-                WsCommunications::QuoteCreated(quote) => {
-                    assert_eq!(quote.quote_id, "q-1");
-                    assert_eq!(quote.yes_bid, 50);
-                }
-                other => panic!("unexpected communications payload: {:?}", other),
+        WsMessage::Data(WsDataMessage::Communications { msg, .. }) => match msg {
+            WsCommunications::QuoteCreated(quote) => {
+                assert_eq!(quote.quote_id, "q-1");
+                assert_eq!(quote.yes_bid, 50);
             }
-        }
+            other => panic!("unexpected communications payload: {:?}", other),
+        },
         other => panic!("unexpected: {:?}", other),
     }
 }
@@ -473,16 +467,14 @@ fn ws_quote_accepted_message_parses() {
     let env: WsEnvelope = serde_json::from_str(json).unwrap();
     let msg = env.into_message().unwrap();
     match msg {
-        WsMessage::Data(WsDataMessage::Communications { msg, .. }) => {
-            match msg {
-                WsCommunications::QuoteAccepted(quote) => {
-                    assert_eq!(quote.quote_id, "q-2");
-                    assert!(matches!(quote.accepted_side, Some(YesNo::Yes)));
-                    assert_eq!(quote.contracts_accepted, Some(10));
-                }
-                other => panic!("unexpected communications payload: {:?}", other),
+        WsMessage::Data(WsDataMessage::Communications { msg, .. }) => match msg {
+            WsCommunications::QuoteAccepted(quote) => {
+                assert_eq!(quote.quote_id, "q-2");
+                assert!(matches!(quote.accepted_side, Some(YesNo::Yes)));
+                assert_eq!(quote.contracts_accepted, Some(10));
             }
-        }
+            other => panic!("unexpected communications payload: {:?}", other),
+        },
         other => panic!("unexpected: {:?}", other),
     }
 }
@@ -506,15 +498,13 @@ fn ws_quote_executed_message_parses() {
     let env: WsEnvelope = serde_json::from_str(json).unwrap();
     let msg = env.into_message().unwrap();
     match msg {
-        WsMessage::Data(WsDataMessage::Communications { msg, .. }) => {
-            match msg {
-                WsCommunications::QuoteExecuted(quote) => {
-                    assert_eq!(quote.quote_id, "q-3");
-                    assert_eq!(quote.order_id, "order-1");
-                }
-                other => panic!("unexpected communications payload: {:?}", other),
+        WsMessage::Data(WsDataMessage::Communications { msg, .. }) => match msg {
+            WsCommunications::QuoteExecuted(quote) => {
+                assert_eq!(quote.quote_id, "q-3");
+                assert_eq!(quote.order_id, "order-1");
             }
-        }
+            other => panic!("unexpected communications payload: {:?}", other),
+        },
         other => panic!("unexpected: {:?}", other),
     }
 }
@@ -556,7 +546,10 @@ fn ws_order_group_updates_message_parses() {
     match msg {
         WsMessage::Data(WsDataMessage::OrderGroupUpdates { msg, .. }) => {
             assert_eq!(msg.order_group_id, "og-1");
-            assert!(matches!(msg.event_type, WsOrderGroupEventType::LimitUpdated));
+            assert!(matches!(
+                msg.event_type,
+                WsOrderGroupEventType::LimitUpdated
+            ));
             assert_eq!(msg.contracts_limit_fp.as_deref(), Some("150.00"));
         }
         other => panic!("unexpected: {:?}", other),

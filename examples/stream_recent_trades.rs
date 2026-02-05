@@ -2,7 +2,6 @@
 ///
 /// Demonstrates the stream API with max_items limit for collecting a subset
 /// of results.
-
 use chrono::{Duration, Utc};
 use futures::stream::TryStreamExt;
 use kalshi::{GetTradesParams, KalshiEnvironment, KalshiRestClient};

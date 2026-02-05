@@ -24,7 +24,8 @@ impl KalshiEnvironment {
     /// WS URL: wss://demo-api.kalshi.co/trade-api/ws/v2
     pub fn demo() -> Self {
         Self {
-            rest_origin: Url::parse(&format!("https://{DEMO_HOST}/")).expect("valid demo REST origin"),
+            rest_origin: Url::parse(&format!("https://{DEMO_HOST}/"))
+                .expect("valid demo REST origin"),
             ws_url: format!("wss://{DEMO_HOST}{WS_PATH}"),
         }
     }
@@ -34,7 +35,8 @@ impl KalshiEnvironment {
     /// WS URL: wss://api.elections.kalshi.com/trade-api/ws/v2
     pub fn production() -> Self {
         Self {
-            rest_origin: Url::parse(&format!("https://{LIVE_HOST}/")).expect("valid prod REST origin"),
+            rest_origin: Url::parse(&format!("https://{LIVE_HOST}/"))
+                .expect("valid prod REST origin"),
             ws_url: format!("wss://{LIVE_HOST}{WS_PATH}"),
         }
     }
@@ -59,5 +61,3 @@ mod tests {
         let _ = Url::parse(&env.ws_url).expect("valid prod WS URL");
     }
 }
-
-
