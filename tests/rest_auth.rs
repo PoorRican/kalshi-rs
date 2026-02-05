@@ -1,6 +1,9 @@
 mod common;
 
-use kalshi::{GetOrdersParams, GetPositionsParams, KalshiError, KalshiRestClient};
+use kalshi::{
+    GetFillsParams, GetOrdersParams, GetPositionsParams, GetSettlementsParams,
+    GetSubaccountTransfersParams, KalshiError, KalshiRestClient,
+};
 
 #[tokio::test]
 async fn test_get_balance() {
@@ -61,6 +64,104 @@ async fn test_get_orders() {
 
     // Orders may be empty, but the vector should exist
     assert!(resp.orders.len() <= 10);
+}
+
+#[tokio::test]
+async fn test_get_fills() {
+    common::load_env();
+    let auth = common::load_auth();
+    let client = KalshiRestClient::new(common::demo_env()).with_auth(auth);
+
+    let resp = tokio::time::timeout(common::TEST_TIMEOUT, async {
+        client
+            .get_fills(GetFillsParams {
+                limit: Some(1),
+                ..Default::default()
+            })
+            .await
+    })
+    .await
+    .expect("timeout")
+    .expect("request failed");
+
+    assert!(resp.fills.len() <= 1);
+}
+
+#[tokio::test]
+async fn test_get_settlements() {
+    common::load_env();
+    let auth = common::load_auth();
+    let client = KalshiRestClient::new(common::demo_env()).with_auth(auth);
+
+    let resp = tokio::time::timeout(common::TEST_TIMEOUT, async {
+        client
+            .get_settlements(GetSettlementsParams {
+                limit: Some(1),
+                ..Default::default()
+            })
+            .await
+    })
+    .await
+    .expect("timeout")
+    .expect("request failed");
+
+    assert!(resp.settlements.len() <= 1);
+}
+
+#[tokio::test]
+async fn test_get_account_api_limits() {
+    common::load_env();
+    let auth = common::load_auth();
+    let client = KalshiRestClient::new(common::demo_env()).with_auth(auth);
+
+    let resp = tokio::time::timeout(common::TEST_TIMEOUT, async {
+        client.get_account_api_limits().await
+    })
+    .await
+    .expect("timeout")
+    .expect("request failed");
+
+    assert!(resp.read_limit >= 0);
+    assert!(resp.write_limit >= 0);
+}
+
+#[tokio::test]
+async fn test_get_subaccount_balances() {
+    common::load_env();
+    let auth = common::load_auth();
+    let client = KalshiRestClient::new(common::demo_env()).with_auth(auth);
+
+    let resp = tokio::time::timeout(common::TEST_TIMEOUT, async {
+        client.get_subaccount_balances().await
+    })
+    .await
+    .expect("timeout")
+    .expect("request failed");
+
+    if let Some(first) = resp.subaccount_balances.first() {
+        assert!(first.updated_ts > 0);
+    }
+}
+
+#[tokio::test]
+async fn test_get_subaccount_transfers() {
+    common::load_env();
+    let auth = common::load_auth();
+    let client = KalshiRestClient::new(common::demo_env()).with_auth(auth);
+
+    let resp = tokio::time::timeout(common::TEST_TIMEOUT, async {
+        client
+            .get_subaccount_transfers(GetSubaccountTransfersParams {
+                limit: Some(1),
+                ..Default::default()
+            })
+            .await
+    })
+    .await
+    .expect("timeout")
+    .expect("request failed");
+
+    assert!(resp.subaccount_transfers.len() <= 1);
 }
 
 #[tokio::test]

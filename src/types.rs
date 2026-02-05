@@ -21,6 +21,69 @@ where
     }
 }
 
+/// Deserialize string or number into a String (fixed-point values often arrive as strings).
+pub fn deserialize_string_or_number<'de, D>(deserializer: D) -> Result<String, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    struct StringOrNumber;
+
+    impl<'de> serde::de::Visitor<'de> for StringOrNumber {
+        type Value = String;
+
+        fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+            formatter.write_str("a string or number")
+        }
+
+        fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
+        where
+            E: serde::de::Error,
+        {
+            Ok(v.to_string())
+        }
+
+        fn visit_string<E>(self, v: String) -> Result<Self::Value, E>
+        where
+            E: serde::de::Error,
+        {
+            Ok(v)
+        }
+
+        fn visit_i64<E>(self, v: i64) -> Result<Self::Value, E>
+        where
+            E: serde::de::Error,
+        {
+            Ok(v.to_string())
+        }
+
+        fn visit_u64<E>(self, v: u64) -> Result<Self::Value, E>
+        where
+            E: serde::de::Error,
+        {
+            Ok(v.to_string())
+        }
+
+        fn visit_f64<E>(self, v: f64) -> Result<Self::Value, E>
+        where
+            E: serde::de::Error,
+        {
+            Ok(v.to_string())
+        }
+    }
+
+    deserializer.deserialize_any(StringOrNumber)
+}
+
+/// Deserialize a null or array into a Vec<T> (null maps to empty vec).
+pub fn deserialize_null_as_empty_vec<'de, D, T>(deserializer: D) -> Result<Vec<T>, D::Error>
+where
+    D: Deserializer<'de>,
+    T: Deserialize<'de>,
+{
+    let opt = Option::<Vec<T>>::deserialize(deserializer)?;
+    Ok(opt.unwrap_or_default())
+}
+
 /// Fixed-point dollar string (e.g. "0.5600").
 pub type FixedPointDollars = String;
 
@@ -62,7 +125,7 @@ pub struct ErrorResponse {
     #[serde(default)]
     pub message: Option<String>,
     #[serde(default)]
-    pub details: Option<AnyJson>,
+    pub details: Option<String>,
     #[serde(default)]
     pub service: Option<String>,
 }
@@ -115,13 +178,16 @@ impl Serialize for EventStatus {
 
 /// --- Market Status ---
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
 pub enum MarketStatus {
     Unopened,
     Open,
     Paused,
     Closed,
     Settled,
+    #[serde(other)]
+    Unknown,
 }
 
 impl MarketStatus {
@@ -132,6 +198,7 @@ impl MarketStatus {
             MarketStatus::Paused => "paused",
             MarketStatus::Closed => "closed",
             MarketStatus::Settled => "settled",
+            MarketStatus::Unknown => "unknown",
         }
     }
 }
@@ -444,5 +511,22 @@ impl fmt::Display for TradeTakerSide {
 impl Serialize for TradeTakerSide {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         serializer.serialize_str(self.as_str())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn market_status_deserialize_known() {
+        let status: MarketStatus = serde_json::from_str("\"open\"").unwrap();
+        assert!(matches!(status, MarketStatus::Open));
+    }
+
+    #[test]
+    fn market_status_deserialize_unknown() {
+        let status: MarketStatus = serde_json::from_str("\"mystery\"").unwrap();
+        assert!(matches!(status, MarketStatus::Unknown));
     }
 }

@@ -2,9 +2,12 @@ use crate::{KalshiAuth, KalshiEnvironment, KalshiError, REST_PREFIX};
 use crate::rest::types::*;
 use crate::types::ErrorResponse;
 
+use futures::future::BoxFuture;
+use futures::stream::{self, Stream};
 use reqwest::header::{HeaderMap, HeaderName, HeaderValue};
 use reqwest::{Client, Method};
 use serde::{de::DeserializeOwned, Serialize};
+use std::collections::VecDeque;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 use tokio::time::{Duration, Instant};
@@ -118,6 +121,102 @@ impl RateLimiter {
             tokio::time::sleep(scheduled - now).await;
         }
     }
+}
+
+pub struct CursorPager<T> {
+    cursor: Option<String>,
+    done: bool,
+    fetch: Box<
+        dyn FnMut(Option<String>) -> BoxFuture<'static, Result<(Vec<T>, Option<String>), KalshiError>>
+            + Send,
+    >,
+}
+
+impl<T> CursorPager<T> {
+    pub fn new<F>(cursor: Option<String>, fetch: F) -> Self
+    where
+        F: FnMut(Option<String>) -> BoxFuture<'static, Result<(Vec<T>, Option<String>), KalshiError>>
+            + Send
+            + 'static,
+    {
+        Self {
+            cursor: cursor.filter(|c| !c.is_empty()),
+            done: false,
+            fetch: Box::new(fetch),
+        }
+    }
+
+    pub async fn next_page(&mut self) -> Result<Option<Vec<T>>, KalshiError> {
+        if self.done {
+            return Ok(None);
+        }
+
+        let (items, next) = (self.fetch)(self.cursor.clone()).await?;
+        self.cursor = next.filter(|c| !c.is_empty());
+        if self.cursor.is_none() {
+            self.done = true;
+        }
+
+        Ok(Some(items))
+    }
+}
+
+struct StreamState<T> {
+    pager: CursorPager<T>,
+    buffer: VecDeque<T>,
+    remaining: Option<usize>,
+    done: bool,
+}
+
+fn stream_items<T>(
+    pager: CursorPager<T>,
+    max_items: Option<usize>,
+) -> impl Stream<Item = Result<T, KalshiError>> + Send
+where
+    T: Send + 'static,
+{
+    let state = StreamState {
+        pager,
+        buffer: VecDeque::new(),
+        remaining: max_items,
+        done: false,
+    };
+
+    stream::unfold(state, |mut state| async move {
+        if state.done {
+            return None;
+        }
+        if let Some(remaining) = state.remaining {
+            if remaining == 0 {
+                return None;
+            }
+        }
+
+        loop {
+            if let Some(item) = state.buffer.pop_front() {
+                if let Some(remaining) = state.remaining.as_mut() {
+                    *remaining -= 1;
+                }
+                return Some((Ok(item), state));
+            }
+
+            match state.pager.next_page().await {
+                Ok(Some(items)) => {
+                    state.buffer = items.into();
+                    if state.buffer.is_empty() && state.pager.done {
+                        return None;
+                    }
+                }
+                Ok(None) => {
+                    return None;
+                }
+                Err(err) => {
+                    state.done = true;
+                    return Some((Err(err), state));
+                }
+            }
+        }
+    })
 }
 
 #[derive(Debug, Clone)]
@@ -248,6 +347,12 @@ impl KalshiRestClient {
     pub async fn get_series_list(&self, params: GetSeriesListParams) -> Result<GetSeriesListResponse, KalshiError> {
         let path = Self::full_path("/series");
         self.send(Method::GET, &path, Some(&params), Option::<&()>::None, false).await
+    }
+
+    /// GET /series/{series_ticker}
+    pub async fn get_series(&self, series_ticker: &str) -> Result<GetSeriesResponse, KalshiError> {
+        let path = Self::full_path(&format!("/series/{series_ticker}"));
+        self.send(Method::GET, &path, Option::<&()>::None, Option::<&()>::None, false).await
     }
 
     /// GET /events  (excludes multivariate events)
@@ -434,6 +539,187 @@ impl KalshiRestClient {
         Ok(items)
     }
 
+    pub fn events_pager(&self, params: GetEventsParams) -> CursorPager<EventData> {
+        let client = self.clone();
+        let base_params = params.clone();
+        CursorPager::new(params.cursor.clone(), move |cursor| {
+            let client = client.clone();
+            let mut page_params = base_params.clone();
+            page_params.cursor = cursor;
+            Box::pin(async move {
+                let resp = client.get_events(page_params).await?;
+                Ok((resp.events, resp.cursor))
+            })
+        })
+    }
+
+    pub fn markets_pager(&self, params: GetMarketsParams) -> CursorPager<Market> {
+        let client = self.clone();
+        let base_params = params.clone();
+        CursorPager::new(params.cursor.clone(), move |cursor| {
+            let client = client.clone();
+            let mut page_params = base_params.clone();
+            page_params.cursor = cursor;
+            Box::pin(async move {
+                let resp = client.get_markets(page_params).await?;
+                Ok((resp.markets, resp.cursor))
+            })
+        })
+    }
+
+    pub fn trades_pager(&self, params: GetTradesParams) -> CursorPager<Trade> {
+        let client = self.clone();
+        let base_params = params.clone();
+        CursorPager::new(params.cursor.clone(), move |cursor| {
+            let client = client.clone();
+            let mut page_params = base_params.clone();
+            page_params.cursor = cursor;
+            Box::pin(async move {
+                let resp = client.get_trades(page_params).await?;
+                Ok((resp.trades, resp.cursor))
+            })
+        })
+    }
+
+    pub fn positions_pager(&self, params: GetPositionsParams) -> CursorPager<PositionsPage> {
+        let client = self.clone();
+        let base_params = params.clone();
+        CursorPager::new(params.cursor.clone(), move |cursor| {
+            let client = client.clone();
+            let mut page_params = base_params.clone();
+            page_params.cursor = cursor;
+            Box::pin(async move {
+                let resp = client.get_positions(page_params).await?;
+                let cursor = resp.cursor.clone();
+                let page = PositionsPage::from(resp);
+                Ok((vec![page], cursor))
+            })
+        })
+    }
+
+    pub fn orders_pager(&self, params: GetOrdersParams) -> CursorPager<Order> {
+        let client = self.clone();
+        let base_params = params.clone();
+        CursorPager::new(params.cursor.clone(), move |cursor| {
+            let client = client.clone();
+            let mut page_params = base_params.clone();
+            page_params.cursor = cursor;
+            Box::pin(async move {
+                let resp = client.get_orders(page_params).await?;
+                Ok((resp.orders, resp.cursor))
+            })
+        })
+    }
+
+    pub fn fills_pager(&self, params: GetFillsParams) -> CursorPager<Fill> {
+        let client = self.clone();
+        let base_params = params.clone();
+        CursorPager::new(params.cursor.clone(), move |cursor| {
+            let client = client.clone();
+            let mut page_params = base_params.clone();
+            page_params.cursor = cursor;
+            Box::pin(async move {
+                let resp = client.get_fills(page_params).await?;
+                Ok((resp.fills, resp.cursor))
+            })
+        })
+    }
+
+    pub fn settlements_pager(&self, params: GetSettlementsParams) -> CursorPager<Settlement> {
+        let client = self.clone();
+        let base_params = params.clone();
+        CursorPager::new(params.cursor.clone(), move |cursor| {
+            let client = client.clone();
+            let mut page_params = base_params.clone();
+            page_params.cursor = cursor;
+            Box::pin(async move {
+                let resp = client.get_settlements(page_params).await?;
+                Ok((resp.settlements, resp.cursor))
+            })
+        })
+    }
+
+    pub fn subaccount_transfers_pager(
+        &self,
+        params: GetSubaccountTransfersParams,
+    ) -> CursorPager<SubaccountTransfer> {
+        let client = self.clone();
+        let base_params = params.clone();
+        CursorPager::new(params.cursor.clone(), move |cursor| {
+            let client = client.clone();
+            let mut page_params = base_params.clone();
+            page_params.cursor = cursor;
+            Box::pin(async move {
+                let resp = client.get_subaccount_transfers(page_params).await?;
+                Ok((resp.subaccount_transfers, resp.cursor))
+            })
+        })
+    }
+
+    pub fn stream_events(
+        &self,
+        params: GetEventsParams,
+        max_items: Option<usize>,
+    ) -> impl Stream<Item = Result<EventData, KalshiError>> + Send {
+        stream_items(self.events_pager(params), max_items)
+    }
+
+    pub fn stream_markets(
+        &self,
+        params: GetMarketsParams,
+        max_items: Option<usize>,
+    ) -> impl Stream<Item = Result<Market, KalshiError>> + Send {
+        stream_items(self.markets_pager(params), max_items)
+    }
+
+    pub fn stream_trades(
+        &self,
+        params: GetTradesParams,
+        max_items: Option<usize>,
+    ) -> impl Stream<Item = Result<Trade, KalshiError>> + Send {
+        stream_items(self.trades_pager(params), max_items)
+    }
+
+    pub fn stream_positions(
+        &self,
+        params: GetPositionsParams,
+        max_items: Option<usize>,
+    ) -> impl Stream<Item = Result<PositionsPage, KalshiError>> + Send {
+        stream_items(self.positions_pager(params), max_items)
+    }
+
+    pub fn stream_orders(
+        &self,
+        params: GetOrdersParams,
+        max_items: Option<usize>,
+    ) -> impl Stream<Item = Result<Order, KalshiError>> + Send {
+        stream_items(self.orders_pager(params), max_items)
+    }
+
+    pub fn stream_fills(
+        &self,
+        params: GetFillsParams,
+        max_items: Option<usize>,
+    ) -> impl Stream<Item = Result<Fill, KalshiError>> + Send {
+        stream_items(self.fills_pager(params), max_items)
+    }
+
+    pub fn stream_settlements(
+        &self,
+        params: GetSettlementsParams,
+        max_items: Option<usize>,
+    ) -> impl Stream<Item = Result<Settlement, KalshiError>> + Send {
+        stream_items(self.settlements_pager(params), max_items)
+    }
+
+    pub fn stream_subaccount_transfers(
+        &self,
+        params: GetSubaccountTransfersParams,
+        max_items: Option<usize>,
+    ) -> impl Stream<Item = Result<SubaccountTransfer, KalshiError>> + Send {
+        stream_items(self.subaccount_transfers_pager(params), max_items)
+    }
+
     /// Fetch all pages for markets using cursor pagination.
     pub async fn get_markets_all(&self, params: GetMarketsParams) -> Result<Vec<Market>, KalshiError> {
         self.paginate_cursor(params.cursor.clone(), |cursor| {
@@ -442,6 +728,19 @@ impl KalshiRestClient {
             async move {
                 let resp = self.get_markets(page_params).await?;
                 Ok((resp.markets, resp.cursor))
+            }
+        })
+        .await
+    }
+
+    /// Fetch all pages for events using cursor pagination.
+    pub async fn get_events_all(&self, params: GetEventsParams) -> Result<Vec<EventData>, KalshiError> {
+        self.paginate_cursor(params.cursor.clone(), |cursor| {
+            let mut page_params = params.clone();
+            page_params.cursor = cursor;
+            async move {
+                let resp = self.get_events(page_params).await?;
+                Ok((resp.events, resp.cursor))
             }
         })
         .await
@@ -480,7 +779,10 @@ impl KalshiRestClient {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use futures::stream::TryStreamExt;
     use reqwest::StatusCode;
+    use std::sync::Arc;
+    use tokio::time::{timeout, Duration};
 
     #[test]
     fn http_error_parses_json_body() {
@@ -522,5 +824,98 @@ mod tests {
             }
             other => panic!("unexpected error: {:?}", other),
         }
+    }
+
+    #[tokio::test]
+    async fn rate_limiter_zero_rps_returns_quickly() {
+        let limiter = RateLimiter::new(RateLimitConfig {
+            read_rps: 0,
+            write_rps: 0,
+        });
+
+        timeout(Duration::from_millis(10), limiter.wait(RateLimitKind::Read))
+            .await
+            .expect("read wait timed out");
+        timeout(Duration::from_millis(10), limiter.wait(RateLimitKind::Write))
+            .await
+            .expect("write wait timed out");
+    }
+
+    #[tokio::test]
+    async fn paginate_cursor_collects_all_pages() {
+        let client = KalshiRestClient::new(KalshiEnvironment::demo());
+        let mut calls = 0usize;
+
+        let items = client
+            .paginate_cursor(Some("c1".to_string()), |cursor| {
+                let expected = if calls == 0 {
+                    Some("c1".to_string())
+                } else {
+                    Some("c2".to_string())
+                };
+                let page = if calls == 0 {
+                    (vec![1, 2], Some("c2".to_string()))
+                } else {
+                    (vec![3], None)
+                };
+                calls += 1;
+                async move {
+                    assert_eq!(cursor, expected);
+                    Ok(page)
+                }
+            })
+            .await
+            .expect("paginate failed");
+
+        assert_eq!(items, vec![1, 2, 3]);
+        assert_eq!(calls, 2);
+    }
+
+    #[tokio::test]
+    async fn cursor_pager_returns_pages_in_order() {
+        let mut pages = VecDeque::from(vec![
+            (vec![1, 2], Some("c1".to_string())),
+            (vec![3], None),
+        ]);
+        let mut pager = CursorPager::new(None, move |_cursor| {
+            let page = pages
+                .pop_front()
+                .unwrap_or((Vec::<i32>::new(), None));
+            Box::pin(async move { Ok(page) })
+        });
+
+        let first = pager.next_page().await.unwrap().unwrap();
+        assert_eq!(first, vec![1, 2]);
+        let second = pager.next_page().await.unwrap().unwrap();
+        assert_eq!(second, vec![3]);
+        let done = pager.next_page().await.unwrap();
+        assert!(done.is_none());
+    }
+
+    #[tokio::test]
+    async fn stream_items_truncates_without_extra_fetch() {
+        let mut pages = VecDeque::from(vec![
+            (vec![1, 2], Some("c1".to_string())),
+            (vec![3, 4], Some("c2".to_string())),
+            (vec![5], None),
+        ]);
+        let call_count = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let call_count_ref = Arc::clone(&call_count);
+        let pager = CursorPager::new(None, move |_cursor| {
+            call_count_ref.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            let page = pages
+                .pop_front()
+                .unwrap_or((Vec::<i32>::new(), None));
+            Box::pin(async move { Ok(page) })
+        });
+
+        let items: Vec<i32> = stream_items(pager, Some(3))
+            .try_collect()
+            .await
+            .unwrap();
+
+        assert_eq!(items, vec![1, 2, 3]);
+        // Should only fetch as many pages as needed to reach 3 items.
+        assert_eq!(call_count.load(std::sync::atomic::Ordering::Relaxed), 2);
     }
 }

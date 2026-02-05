@@ -1,8 +1,8 @@
 mod common;
 
 use kalshi::{
-    EventStatus, GetEventsParams, GetMarketsParams, GetSeriesListParams, KalshiRestClient,
-    MarketStatus,
+    EventStatus, GetEventsParams, GetMarketsParams, GetSeriesFeeChangesParams, GetSeriesListParams,
+    GetTradesParams, KalshiRestClient, MarketStatus,
 };
 
 #[tokio::test]
@@ -22,6 +22,33 @@ async fn test_get_series_list() {
 }
 
 #[tokio::test]
+async fn test_get_series_by_ticker() {
+    let client = KalshiRestClient::new(common::demo_env());
+    let list_resp = tokio::time::timeout(common::TEST_TIMEOUT, async {
+        client
+            .get_series_list(GetSeriesListParams::default())
+            .await
+    })
+    .await
+    .expect("timeout")
+    .expect("request failed");
+
+    if list_resp.series.is_empty() {
+        return;
+    }
+
+    let ticker = list_resp.series[0].ticker.clone();
+    let resp = tokio::time::timeout(common::TEST_TIMEOUT, async {
+        client.get_series(&ticker).await
+    })
+    .await
+    .expect("timeout")
+    .expect("request failed");
+
+    assert_eq!(resp.series.ticker, ticker);
+}
+
+#[tokio::test]
 async fn test_get_events() {
     let client = KalshiRestClient::new(common::demo_env());
     let resp = tokio::time::timeout(common::TEST_TIMEOUT, async {
@@ -38,6 +65,28 @@ async fn test_get_events() {
     .expect("request failed");
 
     assert!(resp.events.len() <= 5);
+}
+
+#[tokio::test]
+async fn test_get_events_all() {
+    let client = KalshiRestClient::new(common::demo_env());
+    let events = tokio::time::timeout(common::TEST_TIMEOUT, async {
+        client
+            .get_events_all(GetEventsParams {
+                // Use a far-future close filter to keep the result set small.
+                min_close_ts: Some(4_102_444_800),
+                limit: Some(100),
+                ..Default::default()
+            })
+            .await
+    })
+    .await
+    .expect("timeout")
+    .expect("request failed");
+
+    if let Some(first) = events.first() {
+        assert!(!first.event_ticker.is_empty());
+    }
 }
 
 #[tokio::test]
@@ -127,4 +176,151 @@ async fn test_get_market_by_ticker() {
     .expect("request failed");
 
     assert_eq!(resp.market.ticker, market_ticker);
+}
+
+#[tokio::test]
+async fn test_get_market_orderbook() {
+    let client = KalshiRestClient::new(common::demo_env());
+
+    let markets_resp = tokio::time::timeout(common::TEST_TIMEOUT, async {
+        client
+            .get_markets(GetMarketsParams {
+                limit: Some(1),
+                status: Some(MarketStatus::Open),
+                ..Default::default()
+            })
+            .await
+    })
+    .await
+    .expect("timeout")
+    .expect("request failed");
+
+    if markets_resp.markets.is_empty() {
+        return;
+    }
+
+    let market_ticker = markets_resp.markets[0].ticker.clone();
+    let resp = tokio::time::timeout(common::TEST_TIMEOUT, async {
+        client.get_market_orderbook(&market_ticker, Some(1)).await
+    })
+    .await
+    .expect("timeout")
+    .expect("request failed");
+
+    assert!(resp.orderbook.yes.len() <= 1);
+    assert!(resp.orderbook.no.len() <= 1);
+}
+
+#[tokio::test]
+async fn test_get_trades() {
+    let client = KalshiRestClient::new(common::demo_env());
+
+    let markets_resp = tokio::time::timeout(common::TEST_TIMEOUT, async {
+        client
+            .get_markets(GetMarketsParams {
+                limit: Some(1),
+                status: Some(MarketStatus::Open),
+                ..Default::default()
+            })
+            .await
+    })
+    .await
+    .expect("timeout")
+    .expect("request failed");
+
+    if markets_resp.markets.is_empty() {
+        return;
+    }
+
+    let market_ticker = markets_resp.markets[0].ticker.clone();
+    let resp = tokio::time::timeout(common::TEST_TIMEOUT, async {
+        client
+            .get_trades(GetTradesParams {
+                ticker: Some(market_ticker),
+                limit: Some(1),
+                ..Default::default()
+            })
+            .await
+    })
+    .await
+    .expect("timeout")
+    .expect("request failed");
+
+    assert!(resp.trades.len() <= 1);
+}
+
+#[tokio::test]
+async fn test_get_exchange_status() {
+    let client = KalshiRestClient::new(common::demo_env());
+    let resp = tokio::time::timeout(common::TEST_TIMEOUT, async {
+        client.get_exchange_status().await
+    })
+    .await
+    .expect("timeout")
+    .expect("request failed");
+
+    if let Some(ts) = resp.exchange_estimated_resume_time.as_deref() {
+        assert!(!ts.is_empty());
+    }
+}
+
+#[tokio::test]
+async fn test_get_exchange_announcements() {
+    let client = KalshiRestClient::new(common::demo_env());
+    let resp = tokio::time::timeout(common::TEST_TIMEOUT, async {
+        client.get_exchange_announcements().await
+    })
+    .await
+    .expect("timeout")
+    .expect("request failed");
+
+    if let Some(first) = resp.announcements.first() {
+        assert!(!first.message.is_empty());
+    }
+}
+
+#[tokio::test]
+async fn test_get_exchange_schedule() {
+    let client = KalshiRestClient::new(common::demo_env());
+    let resp = tokio::time::timeout(common::TEST_TIMEOUT, async {
+        client.get_exchange_schedule().await
+    })
+    .await
+    .expect("timeout")
+    .expect("request failed");
+
+    if let Some(first) = resp.schedule.standard_hours.first() {
+        assert!(!first.start_time.is_empty());
+        assert!(!first.end_time.is_empty());
+    }
+}
+
+#[tokio::test]
+async fn test_get_user_data_timestamp() {
+    let client = KalshiRestClient::new(common::demo_env());
+    let resp = tokio::time::timeout(common::TEST_TIMEOUT, async {
+        client.get_user_data_timestamp().await
+    })
+    .await
+    .expect("timeout")
+    .expect("request failed");
+
+    assert!(!resp.as_of_time.is_empty());
+}
+
+#[tokio::test]
+async fn test_get_series_fee_changes() {
+    let client = KalshiRestClient::new(common::demo_env());
+    let resp = tokio::time::timeout(common::TEST_TIMEOUT, async {
+        client
+            .get_series_fee_changes(GetSeriesFeeChangesParams::default())
+            .await
+    })
+    .await
+    .expect("timeout")
+    .expect("request failed");
+
+    if let Some(first) = resp.series_fee_change_arr.first() {
+        assert!(first.scheduled_ts > 0);
+    }
 }

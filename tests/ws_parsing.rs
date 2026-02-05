@@ -1,6 +1,9 @@
 //! Unit tests for WebSocket message parsing.
 
-use kalshi::{WsDataMessage, WsEnvelope, WsMessage, WsOrderbookDelta, WsTicker};
+use kalshi::{
+    MarketStatus, WsCommunications, WsDataMessage, WsEnvelope, WsMessage, WsMsgType,
+    WsOrderGroupEventType, WsOrderbookDelta, WsTicker, YesNo,
+};
 
 #[test]
 fn ws_envelope_deserializes_with_sid_and_seq() {
@@ -14,7 +17,7 @@ fn ws_envelope_deserializes_with_sid_and_seq() {
 
     let env: WsEnvelope = serde_json::from_str(json).unwrap();
     assert_eq!(env.id, Some(1));
-    assert_eq!(env.msg_type, "orderbook_snapshot");
+    assert_eq!(env.msg_type, WsMsgType::OrderbookSnapshot);
     assert_eq!(env.sid, Some(42));
     assert_eq!(env.seq, Some(100));
     assert!(env.msg.is_some());
@@ -306,4 +309,278 @@ fn ws_orderbook_delta_raw() {
     let raw = env.msg_raw().unwrap();
     let msg: WsOrderbookDelta = serde_json::from_str(raw).unwrap();
     assert_eq!(msg.delta, 10);
+}
+
+#[test]
+fn ws_market_lifecycle_v2_message_parses() {
+    let json = r#"{
+        "type": "market_lifecycle_v2",
+        "msg": {
+            "market_ticker": "MKT-1",
+            "status": "open",
+            "can_trade": true
+        }
+    }"#;
+
+    let env: WsEnvelope = serde_json::from_str(json).unwrap();
+    let msg = env.into_message().unwrap();
+    match msg {
+        WsMessage::Data(WsDataMessage::MarketLifecycleV2 { msg, .. }) => {
+            assert_eq!(msg.market_ticker, "MKT-1");
+            assert_eq!(msg.status, Some(MarketStatus::Open));
+            assert_eq!(msg.can_trade, Some(true));
+        }
+        other => panic!("unexpected: {:?}", other),
+    }
+}
+
+#[test]
+fn ws_market_positions_message_parses() {
+    let json = r#"{
+        "type": "market_positions",
+        "msg": {
+            "market_positions": [{"ticker":"MKT-1","position":1}],
+            "event_positions": [{"event_ticker":"EVT-1","position":2}]
+        }
+    }"#;
+
+    let env: WsEnvelope = serde_json::from_str(json).unwrap();
+    let msg = env.into_message().unwrap();
+    match msg {
+        WsMessage::Data(WsDataMessage::MarketPositions { msg, .. }) => {
+            assert_eq!(msg.market_positions.len(), 1);
+            assert_eq!(msg.market_positions[0].ticker, "MKT-1");
+            assert_eq!(msg.event_positions[0].event_ticker, "EVT-1");
+        }
+        other => panic!("unexpected: {:?}", other),
+    }
+}
+
+#[test]
+fn ws_rfq_created_message_parses() {
+    let json = r#"{
+        "type": "rfq_created",
+        "msg": {
+            "id": "rfq_123",
+            "creator_id": "",
+            "market_ticker": "FED-23DEC-T3.00",
+            "created_ts": "2024-12-01T10:00:00Z",
+            "mve_selected_legs": [
+                {"event_ticker":"EVT-1","market_ticker":"MKT-1","side":"yes"}
+            ]
+        }
+    }"#;
+
+    let env: WsEnvelope = serde_json::from_str(json).unwrap();
+    let msg = env.into_message().unwrap();
+    match msg {
+        WsMessage::Data(WsDataMessage::Communications { msg, .. }) => {
+            match msg {
+                WsCommunications::RfqCreated(rfq) => {
+                    assert_eq!(rfq.id, "rfq_123");
+                    assert_eq!(rfq.market_ticker, "FED-23DEC-T3.00");
+                    assert!(matches!(
+                        rfq.mve_selected_legs.as_ref().unwrap()[0].side,
+                        Some(YesNo::Yes)
+                    ));
+                }
+                other => panic!("unexpected communications payload: {:?}", other),
+            }
+        }
+        other => panic!("unexpected: {:?}", other),
+    }
+}
+
+#[test]
+fn ws_rfq_deleted_message_parses() {
+    let json = r#"{
+        "type": "rfq_deleted",
+        "msg": {
+            "id": "rfq_124",
+            "creator_id": "creator",
+            "market_ticker": "FED-23DEC-T3.00",
+            "deleted_ts": "2024-12-01T10:05:00Z"
+        }
+    }"#;
+
+    let env: WsEnvelope = serde_json::from_str(json).unwrap();
+    let msg = env.into_message().unwrap();
+    match msg {
+        WsMessage::Data(WsDataMessage::Communications { msg, .. }) => {
+            match msg {
+                WsCommunications::RfqDeleted(rfq) => {
+                    assert_eq!(rfq.id, "rfq_124");
+                    assert_eq!(rfq.creator_id, "creator");
+                }
+                other => panic!("unexpected communications payload: {:?}", other),
+            }
+        }
+        other => panic!("unexpected: {:?}", other),
+    }
+}
+
+#[test]
+fn ws_quote_created_message_parses() {
+    let json = r#"{
+        "type": "quote_created",
+        "msg": {
+            "quote_id": "q-1",
+            "rfq_id": "rfq-1",
+            "quote_creator_id": "creator",
+            "market_ticker": "FED-23DEC-T3.00",
+            "yes_bid": 50,
+            "no_bid": 50,
+            "yes_bid_dollars": "0.50",
+            "no_bid_dollars": "0.50",
+            "created_ts": "2024-12-01T10:06:00Z"
+        }
+    }"#;
+
+    let env: WsEnvelope = serde_json::from_str(json).unwrap();
+    let msg = env.into_message().unwrap();
+    match msg {
+        WsMessage::Data(WsDataMessage::Communications { msg, .. }) => {
+            match msg {
+                WsCommunications::QuoteCreated(quote) => {
+                    assert_eq!(quote.quote_id, "q-1");
+                    assert_eq!(quote.yes_bid, 50);
+                }
+                other => panic!("unexpected communications payload: {:?}", other),
+            }
+        }
+        other => panic!("unexpected: {:?}", other),
+    }
+}
+
+#[test]
+fn ws_quote_accepted_message_parses() {
+    let json = r#"{
+        "type": "quote_accepted",
+        "msg": {
+            "quote_id": "q-2",
+            "rfq_id": "rfq-2",
+            "quote_creator_id": "creator",
+            "market_ticker": "FED-23DEC-T3.00",
+            "yes_bid": 51,
+            "no_bid": 49,
+            "yes_bid_dollars": "0.51",
+            "no_bid_dollars": "0.49",
+            "accepted_side": "yes",
+            "contracts_accepted": 10
+        }
+    }"#;
+
+    let env: WsEnvelope = serde_json::from_str(json).unwrap();
+    let msg = env.into_message().unwrap();
+    match msg {
+        WsMessage::Data(WsDataMessage::Communications { msg, .. }) => {
+            match msg {
+                WsCommunications::QuoteAccepted(quote) => {
+                    assert_eq!(quote.quote_id, "q-2");
+                    assert!(matches!(quote.accepted_side, Some(YesNo::Yes)));
+                    assert_eq!(quote.contracts_accepted, Some(10));
+                }
+                other => panic!("unexpected communications payload: {:?}", other),
+            }
+        }
+        other => panic!("unexpected: {:?}", other),
+    }
+}
+
+#[test]
+fn ws_quote_executed_message_parses() {
+    let json = r#"{
+        "type": "quote_executed",
+        "msg": {
+            "quote_id": "q-3",
+            "rfq_id": "rfq-3",
+            "quote_creator_id": "creator",
+            "rfq_creator_id": "rfq_creator",
+            "order_id": "order-1",
+            "client_order_id": "client-1",
+            "market_ticker": "FED-23DEC-T3.00",
+            "executed_ts": "2024-12-01T10:07:00Z"
+        }
+    }"#;
+
+    let env: WsEnvelope = serde_json::from_str(json).unwrap();
+    let msg = env.into_message().unwrap();
+    match msg {
+        WsMessage::Data(WsDataMessage::Communications { msg, .. }) => {
+            match msg {
+                WsCommunications::QuoteExecuted(quote) => {
+                    assert_eq!(quote.quote_id, "q-3");
+                    assert_eq!(quote.order_id, "order-1");
+                }
+                other => panic!("unexpected communications payload: {:?}", other),
+            }
+        }
+        other => panic!("unexpected: {:?}", other),
+    }
+}
+
+#[test]
+fn ws_multivariate_message_parses() {
+    let json = r#"{
+        "type": "multivariate_lookup",
+        "msg": {
+            "collection_ticker": "COLL-1",
+            "event_ticker": "EVT-1",
+            "market_ticker": "MKT-1",
+            "selected_markets": [
+                {"event_ticker":"EVT-1","market_ticker":"MKT-1","side":"yes"}
+            ]
+        }
+    }"#;
+
+    let env: WsEnvelope = serde_json::from_str(json).unwrap();
+    let msg = env.into_message().unwrap();
+    match msg {
+        WsMessage::Data(WsDataMessage::Multivariate { msg, .. }) => {
+            assert_eq!(msg.collection_ticker, "COLL-1");
+            assert!(matches!(msg.selected_markets[0].side, YesNo::Yes));
+        }
+        other => panic!("unexpected: {:?}", other),
+    }
+}
+
+#[test]
+fn ws_order_group_updates_message_parses() {
+    let json = r#"{
+        "type": "order_group_updates",
+        "msg": {"event_type":"limit_updated","order_group_id":"og-1","contracts_limit_fp":"150.00"}
+    }"#;
+
+    let env: WsEnvelope = serde_json::from_str(json).unwrap();
+    let msg = env.into_message().unwrap();
+    match msg {
+        WsMessage::Data(WsDataMessage::OrderGroupUpdates { msg, .. }) => {
+            assert_eq!(msg.order_group_id, "og-1");
+            assert!(matches!(msg.event_type, WsOrderGroupEventType::LimitUpdated));
+            assert_eq!(msg.contracts_limit_fp.as_deref(), Some("150.00"));
+        }
+        other => panic!("unexpected: {:?}", other),
+    }
+}
+
+#[test]
+fn ws_list_subscriptions_parses_from_subscriptions_field() {
+    let json = r#"{
+        "id": 2,
+        "type": "list_subscriptions",
+        "subscriptions": [
+            {"sid": 10, "channels": ["ticker"], "market_tickers": ["TEST"]}
+        ]
+    }"#;
+
+    let env: WsEnvelope = serde_json::from_str(json).unwrap();
+    let msg = env.into_message().unwrap();
+    match msg {
+        WsMessage::ListSubscriptions { id, subscriptions } => {
+            assert_eq!(id, Some(2));
+            assert_eq!(subscriptions.len(), 1);
+            assert_eq!(subscriptions[0].sid, 10);
+        }
+        other => panic!("unexpected: {:?}", other),
+    }
 }

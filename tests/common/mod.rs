@@ -3,10 +3,12 @@ use std::time::Duration;
 
 pub const TEST_TIMEOUT: Duration = Duration::from_secs(10);
 
+#[allow(dead_code)]
 pub fn load_env() {
     dotenvy::from_filename(".env.test").ok();
 }
 
+#[allow(dead_code)]
 pub fn load_auth() -> KalshiAuth {
     let key_id = std::env::var("KALSHI_KEY_ID").expect("KALSHI_KEY_ID required");
     let pem_path =

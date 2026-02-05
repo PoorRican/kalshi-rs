@@ -90,6 +90,10 @@ impl KalshiAuth {
 #[cfg(test)]
 mod tests {
     use super::KalshiAuth;
+    use base64::{engine::general_purpose::STANDARD, Engine as _};
+    use rsa::pss::{Signature, VerifyingKey};
+    use rsa::signature::Verifier;
+    use sha2::Sha256;
 
     #[test]
     fn signing_message_strips_query() {
@@ -99,5 +103,24 @@ mod tests {
             "/trade-api/v2/markets?limit=10&cursor=abc",
         );
         assert_eq!(msg, "1700000000000GET/trade-api/v2/markets");
+    }
+
+    #[test]
+    fn signature_verifies_with_private_key() {
+        let pem_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("test_key.pem");
+        let auth = KalshiAuth::from_pem_file("test-key", pem_path).expect("load test key");
+        let headers = auth
+            .build_headers("GET", "/trade-api/v2/markets")
+            .expect("build headers");
+        let message =
+            KalshiAuth::signing_message(&headers.timestamp_ms, "GET", "/trade-api/v2/markets");
+        let sig_bytes = STANDARD
+            .decode(headers.signature.as_bytes())
+            .expect("decode signature");
+        let sig = Signature::try_from(sig_bytes.as_slice()).expect("signature");
+        let verifying_key = VerifyingKey::<Sha256>::new(auth.private_key.to_public_key());
+        verifying_key
+            .verify(message.as_bytes(), &sig)
+            .expect("signature verifies");
     }
 }

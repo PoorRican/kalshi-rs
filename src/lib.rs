@@ -9,8 +9,8 @@ pub mod ws;
 pub use auth::{KalshiAuth, KalshiAuthHeaders};
 pub use env::{KalshiEnvironment, REST_PREFIX, WS_PATH};
 pub use error::KalshiError;
-pub use rest::{KalshiRestClient, RateLimitConfig, RateLimitTier};
-pub use ws::KalshiWsClient;
+pub use rest::{CursorPager, KalshiRestClient, RateLimitConfig, RateLimitTier};
+pub use ws::{KalshiWsClient, KalshiWsReconnectingClient, WsEvent, WsReconnectConfig};
 
 // Backwards-compatible type re-exports
 pub use types::*;

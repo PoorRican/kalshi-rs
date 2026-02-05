@@ -1,10 +1,20 @@
 use anyhow;
-use kalshi::{KalshiEnvironment, KalshiWsClient, WsDataMessage, WsMessage, WsSubscriptionParams, WsChannel};
+use kalshi::{
+    KalshiAuth, KalshiEnvironment, KalshiWsClient, WsChannel, WsDataMessage, WsMessage,
+    WsSubscriptionParams,
+};
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    dotenvy::dotenv().ok();
+
     let env = KalshiEnvironment::demo();
-    let mut ws = KalshiWsClient::connect(env).await?;
+    let auth = KalshiAuth::from_pem_file(
+        std::env::var("KALSHI_KEY_ID")?,
+        std::env::var("KALSHI_PRIVATE_KEY_PATH")?,
+    )?;
+
+    let mut ws = KalshiWsClient::connect_authenticated(env, auth).await?;
 
     ws.subscribe(WsSubscriptionParams {
         channels: vec![WsChannel::Ticker],
