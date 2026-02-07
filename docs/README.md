@@ -44,6 +44,7 @@ Note: `get_*_all` loads **all pages into memory** and is intended for convenienc
 `KalshiWsClient` is the high-level WebSocket client with auto reconnect + resubscribe. It emits explicit connection events:
 
 - `WsEvent::Message(...)`
+- `WsEvent::Raw(...)` (when using `WsReaderMode::Raw`)
 - `WsEvent::Reconnected { attempt }`
 - `WsEvent::Disconnected { error }`
 

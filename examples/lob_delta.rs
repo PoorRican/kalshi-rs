@@ -28,6 +28,7 @@ async fn main() -> anyhow::Result<()> {
     loop {
         match ws.next_event().await? {
             WsEvent::Message(msg) => println!("{:?}", msg),
+            WsEvent::Raw(_) => {}
             WsEvent::Reconnected { attempt } => println!("Reconnected (attempt {})", attempt),
             WsEvent::Disconnected { error } => {
                 println!("Disconnected: {:?}", error);

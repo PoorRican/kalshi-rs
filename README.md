@@ -52,7 +52,7 @@ async fn main() -> anyhow::Result<()> {
 ```rust
 use kalshi_fast::{
     KalshiAuth, KalshiEnvironment, KalshiWsClient, WsChannel,
-    WsDataMessage, WsEvent, WsMessage, WsReconnectConfig, WsSubscriptionParams,
+    WsDataMessage, WsEvent, WsMessage, WsReaderConfig, WsReconnectConfig, WsSubscriptionParams,
 };
 
 #[tokio::main]
@@ -73,11 +73,14 @@ async fn main() -> anyhow::Result<()> {
         ..Default::default()
     }).await?;
 
-    loop {
-        match ws.next_event().await? {
+    let events = ws.start_reader(WsReaderConfig::default()).await?;
+
+    while let Some(event) = events.next().await {
+        match event {
             WsEvent::Message(WsMessage::Data(WsDataMessage::Ticker { msg, .. })) => {
                 println!("{}: {}", msg.market_ticker, msg.price);
             }
+            WsEvent::Raw(_) => {}
             WsEvent::Reconnected { attempt } => println!("Reconnected (attempt {})", attempt),
             WsEvent::Disconnected { .. } => break,
             _ => {}
@@ -91,8 +94,9 @@ async fn main() -> anyhow::Result<()> {
 
 Optimized for low-latency algorithmic trading:
 
-- **Deferred JSON parsing** - Uses `serde_json::RawValue` to skip parsing unused fields
-- **Zero-copy message parsing** - Binary WebSocket frames parsed with `from_slice`
+- **Single-pass WS parsing** - Tagged deserialization avoids double parsing for known types
+- **Borrowed message views** - `WsRawEvent::parse_borrowed` minimizes allocations
+- **Deferred JSON parsing** - Uses `serde_json::RawValue` for unknown types
 - **Split read/write streams** - No lock contention on WebSocket operations
 - **Efficient subscription tracking** - HashMap-based channel management
 
@@ -125,6 +129,7 @@ let markets: Vec<_> = client
 `KalshiWsClient` handles reconnection automatically with exponential backoff and resubscribes to active channels. Connection events are exposed via `WsEvent`:
 
 - `WsEvent::Message(...)` - Incoming data
+- `WsEvent::Raw(...)` - Incoming bytes when using `WsReaderMode::Raw`
 - `WsEvent::Reconnected { attempt }` - Connection restored
 - `WsEvent::Disconnected { error }` - Connection lost (after max retries)
 

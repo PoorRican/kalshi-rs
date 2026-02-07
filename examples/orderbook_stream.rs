@@ -150,6 +150,7 @@ async fn main() -> anyhow::Result<()> {
                 WsMessage::Error { error, .. } => println!("[ERROR] {:?}", error),
                 other => println!("[OTHER] {:?}", other),
             },
+            WsEvent::Raw(_) => {}
             WsEvent::Reconnected { attempt } => println!("[RECONNECTED] attempt={}", attempt),
             WsEvent::Disconnected { error } => {
                 println!("[DISCONNECTED] {:?}", error);

@@ -1,7 +1,7 @@
 use anyhow;
 use kalshi_fast::{
     KalshiAuth, KalshiEnvironment, KalshiWsClient, WsChannel, WsDataMessage, WsEvent, WsMessage,
-    WsReconnectConfig, WsSubscriptionParams,
+    WsReaderConfig, WsReconnectConfig, WsSubscriptionParams,
 };
 
 #[tokio::main]
@@ -23,8 +23,10 @@ async fn main() -> anyhow::Result<()> {
     })
     .await?;
 
-    loop {
-        match ws.next_event().await? {
+    let events = ws.start_reader(WsReaderConfig::default()).await?;
+
+    while let Some(event) = events.next().await {
+        match event {
             WsEvent::Message(msg) => match msg {
                 WsMessage::Data(WsDataMessage::Ticker { msg, .. }) => {
                     println!(
@@ -36,6 +38,7 @@ async fn main() -> anyhow::Result<()> {
                     println!("type=other msg={:?}", other);
                 }
             },
+            WsEvent::Raw(_) => {}
             WsEvent::Reconnected { attempt } => {
                 println!("type=reconnected attempt={}", attempt);
             }

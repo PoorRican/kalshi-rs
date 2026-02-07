@@ -2,15 +2,20 @@ use crate::auth::KalshiAuth;
 use crate::env::{KalshiEnvironment, WS_PATH};
 use crate::error::KalshiError;
 use crate::ws::types::{
-    WsEnvelope, WsListSubscriptionsCmd, WsMessage, WsSubscribeCmd, WsSubscriptionParams,
-    WsUnsubscribeCmd, WsUnsubscribeParams, WsUpdateSubscriptionCmd, WsUpdateSubscriptionParams,
-    validate_subscription,
+    WsEnvelope, WsListSubscriptionsCmd, WsMessage, WsRawEvent, WsSubscribeCmd,
+    WsSubscriptionParams, WsUnsubscribeCmd, WsUnsubscribeParams, WsUpdateSubscriptionCmd,
+    WsUpdateSubscriptionParams, validate_subscription,
 };
 
 use futures::{SinkExt, StreamExt};
 
+use bytes::Bytes;
 use rand::random;
+use serde::Deserialize;
 use std::collections::HashMap;
+use std::sync::Arc;
+use tokio::sync::{Mutex, mpsc};
+use tokio::task::JoinHandle;
 use tokio::time::{Duration, sleep};
 use tokio_tungstenite::connect_async;
 use tokio_tungstenite::tungstenite::Message;
@@ -60,6 +65,43 @@ impl Default for WsReconnectConfig {
     }
 }
 
+impl WsReconnectConfig {
+    fn backoff_delay(&self, attempt: u32) -> Duration {
+        let exp = 2f64.powi(attempt.saturating_sub(1) as i32);
+        let mut delay = self.base_delay.mul_f64(exp);
+        if delay > self.max_delay {
+            delay = self.max_delay;
+        }
+        let jitter = self.jitter.clamp(0.0, 1.0);
+        if jitter > 0.0 {
+            let factor = 1.0 - jitter + random::<f64>() * (2.0 * jitter);
+            delay = delay.mul_f64(factor);
+        }
+        delay
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum WsReaderMode {
+    Owned,
+    Raw,
+}
+
+#[derive(Debug, Clone)]
+pub struct WsReaderConfig {
+    pub buffer_size: usize,
+    pub mode: WsReaderMode,
+}
+
+impl Default for WsReaderConfig {
+    fn default() -> Self {
+        Self {
+            buffer_size: 1024,
+            mode: WsReaderMode::Owned,
+        }
+    }
+}
+
 /// Events emitted by [`KalshiWsClient::next_event`].
 ///
 /// The high-level client wraps every raw WebSocket message as well as
@@ -68,15 +110,38 @@ impl Default for WsReconnectConfig {
 pub enum WsEvent {
     /// A parsed WebSocket message (data, ack, error, etc.).
     Message(WsMessage),
+    Raw(WsRawEvent),
     /// Connection was lost and successfully re-established.
     ///
     /// `attempt` is the 1-based retry count that succeeded.
     /// If [`WsReconnectConfig::resubscribe`] is `true`, all previously
     /// active channels have already been resubscribed.
-    Reconnected { attempt: u32 },
+    Reconnected {
+        attempt: u32,
+    },
     /// Connection was lost and could not be restored within
     /// [`WsReconnectConfig::max_retries`].
-    Disconnected { error: KalshiError },
+    Disconnected {
+        error: KalshiError,
+    },
+}
+
+#[derive(Debug, Clone)]
+pub struct WsEventReceiver {
+    inner: Arc<Mutex<mpsc::Receiver<WsEvent>>>,
+}
+
+impl WsEventReceiver {
+    fn new(rx: mpsc::Receiver<WsEvent>) -> Self {
+        Self {
+            inner: Arc::new(Mutex::new(rx)),
+        }
+    }
+
+    pub async fn next(&self) -> Option<WsEvent> {
+        let mut rx = self.inner.lock().await;
+        rx.recv().await
+    }
 }
 
 #[derive(Default)]
@@ -96,14 +161,28 @@ impl SubscriptionTracker {
                 id: Some(id),
                 sid: Some(sid),
             } => {
-                if let Some(params) = self.pending.remove(id) {
-                    self.active.insert(*sid, params);
-                }
+                self.handle_subscribed(Some(*id), Some(*sid));
             }
             WsMessage::Unsubscribed { sid: Some(sid), .. } => {
-                self.active.remove(sid);
+                self.handle_unsubscribed(Some(*sid));
             }
             _ => {}
+        }
+    }
+
+    fn handle_subscribed(&mut self, id: Option<u64>, sid: Option<u64>) {
+        let (id, sid) = match (id, sid) {
+            (Some(id), Some(sid)) => (id, sid),
+            _ => return,
+        };
+        if let Some(params) = self.pending.remove(&id) {
+            self.active.insert(sid, params);
+        }
+    }
+
+    fn handle_unsubscribed(&mut self, sid: Option<u64>) {
+        if let Some(sid) = sid {
+            self.active.remove(&sid);
         }
     }
 
@@ -222,6 +301,44 @@ impl KalshiWsLowLevelClient {
         })
     }
 
+    pub async fn send_raw(&mut self, msg: Message) -> Result<(), KalshiError> {
+        self.write
+            .send(msg)
+            .await
+            .map_err(|e| KalshiError::Ws(e.to_string()))?;
+        self.write
+            .flush()
+            .await
+            .map_err(|e| KalshiError::Ws(e.to_string()))?;
+        Ok(())
+    }
+
+    pub async fn next_frame(&mut self) -> Result<Message, KalshiError> {
+        match self.read.next().await {
+            Some(Ok(msg)) => Ok(msg),
+            Some(Err(e)) => Err(KalshiError::Ws(e.to_string())),
+            None => Err(KalshiError::Ws("websocket stream ended".to_string())),
+        }
+    }
+
+    pub async fn next_json_bytes(&mut self) -> Result<Bytes, KalshiError> {
+        loop {
+            let msg = self.next_frame().await?;
+            match msg {
+                Message::Text(s) => return Ok(Bytes::from(s)),
+                Message::Binary(b) => return Ok(Bytes::from(b)),
+                Message::Ping(payload) => {
+                    self.send_raw(Message::Pong(payload)).await?;
+                }
+                Message::Pong(_) => {}
+                Message::Close(_) => {
+                    return Err(KalshiError::Ws("websocket closed".to_string()));
+                }
+                _ => {}
+            }
+        }
+    }
+
     // -----------------------------------------------
     // Commands
     // -----------------------------------------------
@@ -328,29 +445,8 @@ impl KalshiWsLowLevelClient {
     /// Transparently handles Ping/Pong frames. Returns an error on
     /// Close frames or stream termination.
     pub async fn next_envelope(&mut self) -> Result<WsEnvelope, KalshiError> {
-        while let Some(msg) = self.read.next().await {
-            let msg = msg.map_err(|e| KalshiError::Ws(e.to_string()))?;
-            match msg {
-                Message::Text(s) => return Ok(serde_json::from_str::<WsEnvelope>(&s)?),
-                Message::Binary(b) => {
-                    return Ok(serde_json::from_slice::<WsEnvelope>(&b)?);
-                }
-                Message::Ping(payload) => {
-                    self.write
-                        .send(Message::Pong(payload))
-                        .await
-                        .map_err(|e| KalshiError::Ws(e.to_string()))?;
-                    self.write
-                        .flush()
-                        .await
-                        .map_err(|e| KalshiError::Ws(e.to_string()))?;
-                }
-                Message::Pong(_) => {}
-                Message::Close(_) => return Err(KalshiError::Ws("websocket closed".to_string())),
-                _ => {}
-            }
-        }
-        Err(KalshiError::Ws("websocket stream ended".to_string()))
+        let bytes = self.next_json_bytes().await?;
+        Ok(serde_json::from_slice::<WsEnvelope>(&bytes)?)
     }
 
     /// Read the next message and parse it into a typed [`WsMessage`].
@@ -358,8 +454,8 @@ impl KalshiWsLowLevelClient {
     /// Equivalent to calling [`next_envelope`](Self::next_envelope) followed
     /// by [`WsEnvelope::into_message`].
     pub async fn next_message(&mut self) -> Result<WsMessage, KalshiError> {
-        let env = self.next_envelope().await?;
-        env.into_message()
+        let bytes = self.next_json_bytes().await?;
+        WsMessage::from_bytes(&bytes)
     }
 }
 
@@ -404,9 +500,13 @@ impl KalshiWsLowLevelClient {
 pub struct KalshiWsClient {
     env: KalshiEnvironment,
     auth: Option<KalshiAuth>,
-    client: KalshiWsLowLevelClient,
+    client: Option<KalshiWsLowLevelClient>,
     config: WsReconnectConfig,
-    tracker: SubscriptionTracker,
+    tracker: Arc<Mutex<SubscriptionTracker>>,
+    reader: Option<WsEventReceiver>,
+    outgoing: Option<mpsc::Sender<Message>>,
+    reader_task: Option<JoinHandle<()>>,
+    next_id: u64,
 }
 
 impl KalshiWsClient {
@@ -423,9 +523,13 @@ impl KalshiWsClient {
         Ok(Self {
             env,
             auth: None,
-            client,
+            client: Some(client),
             config,
-            tracker: SubscriptionTracker::default(),
+            tracker: Arc::new(Mutex::new(SubscriptionTracker::default())),
+            reader: None,
+            outgoing: None,
+            reader_task: None,
+            next_id: 1,
         })
     }
 
@@ -442,10 +546,30 @@ impl KalshiWsClient {
         Ok(Self {
             env,
             auth: Some(auth),
-            client,
+            client: Some(client),
             config,
-            tracker: SubscriptionTracker::default(),
+            tracker: Arc::new(Mutex::new(SubscriptionTracker::default())),
+            reader: None,
+            outgoing: None,
+            reader_task: None,
+            next_id: 1,
         })
+    }
+
+    async fn send_command(&mut self, msg: Message) -> Result<(), KalshiError> {
+        if let Some(sender) = &self.outgoing {
+            sender
+                .send(msg)
+                .await
+                .map_err(|_| KalshiError::Ws("websocket writer closed".to_string()))?;
+            return Ok(());
+        }
+        if let Some(client) = &mut self.client {
+            return client.send_raw(msg).await;
+        }
+        Err(KalshiError::Ws(
+            "websocket client not connected".to_string(),
+        ))
     }
 
     // -----------------------------------------------
@@ -457,15 +581,53 @@ impl KalshiWsClient {
     /// The subscription is tracked internally so it can be resubscribed
     /// automatically after a reconnect.
     pub async fn subscribe(&mut self, params: WsSubscriptionParams) -> Result<u64, KalshiError> {
-        let id = self.client.subscribe(params.clone()).await?;
-        self.tracker.record_subscribe_cmd(id, params);
+        let needs_auth = params.channels.iter().any(|c| c.is_private());
+        if needs_auth && self.auth.is_none() {
+            return Err(KalshiError::AuthRequired(
+                "WebSocket private channel subscription",
+            ));
+        }
+
+        validate_subscription(&params)?;
+
+        let id = self.next_id;
+        self.next_id = self.next_id.saturating_add(1);
+
+        {
+            let mut tracker = self.tracker.lock().await;
+            tracker.record_subscribe_cmd(id, params.clone());
+        }
+
+        let cmd = WsSubscribeCmd {
+            id,
+            cmd: "subscribe",
+            params,
+        };
+
+        let text = serde_json::to_string(&cmd)?;
+        self.send_command(Message::Text(text)).await?;
         Ok(id)
     }
 
     /// Unsubscribe from a subscription by its `sid`. Returns the command `id`.
     pub async fn unsubscribe(&mut self, sid: u64) -> Result<u64, KalshiError> {
-        self.tracker.drop_active(sid);
-        self.client.unsubscribe(sid).await
+        let id = self.next_id;
+        self.next_id = self.next_id.saturating_add(1);
+
+        {
+            let mut tracker = self.tracker.lock().await;
+            tracker.drop_active(sid);
+        }
+
+        let cmd = WsUnsubscribeCmd {
+            id,
+            cmd: "unsubscribe",
+            params: WsUnsubscribeParams { sid },
+        };
+
+        let text = serde_json::to_string(&cmd)?;
+        self.send_command(Message::Text(text)).await?;
+        Ok(id)
     }
 
     /// Update an existing subscription (e.g. change market tickers). Returns the command `id`.
@@ -473,13 +635,87 @@ impl KalshiWsClient {
         &mut self,
         params: WsUpdateSubscriptionParams,
     ) -> Result<u64, KalshiError> {
-        self.tracker.apply_update(&params);
-        self.client.update_subscription(params).await
+        let id = self.next_id;
+        self.next_id = self.next_id.saturating_add(1);
+
+        {
+            let mut tracker = self.tracker.lock().await;
+            tracker.apply_update(&params);
+        }
+
+        let cmd = WsUpdateSubscriptionCmd {
+            id,
+            cmd: "update_subscription",
+            params,
+        };
+        let text = serde_json::to_string(&cmd)?;
+        self.send_command(Message::Text(text)).await?;
+        Ok(id)
     }
 
     /// Request a list of active subscriptions from the server. Returns the command `id`.
     pub async fn list_subscriptions(&mut self) -> Result<u64, KalshiError> {
-        self.client.list_subscriptions().await
+        let id = self.next_id;
+        self.next_id = self.next_id.saturating_add(1);
+
+        let cmd = WsListSubscriptionsCmd {
+            id,
+            cmd: "list_subscriptions",
+        };
+        let text = serde_json::to_string(&cmd)?;
+        self.send_command(Message::Text(text)).await?;
+        Ok(id)
+    }
+
+    pub async fn start_reader(
+        &mut self,
+        config: WsReaderConfig,
+    ) -> Result<WsEventReceiver, KalshiError> {
+        if self.reader.is_some() {
+            return Err(KalshiError::InvalidParams(
+                "websocket reader already started".to_string(),
+            ));
+        }
+        if config.buffer_size == 0 {
+            return Err(KalshiError::InvalidParams(
+                "websocket reader buffer_size must be > 0".to_string(),
+            ));
+        }
+
+        let client = self
+            .client
+            .take()
+            .ok_or_else(|| KalshiError::Ws("websocket client not connected".to_string()))?;
+
+        let (event_tx, event_rx) = mpsc::channel(config.buffer_size);
+        let (outgoing_tx, outgoing_rx) = mpsc::channel(config.buffer_size);
+
+        let tracker = self.tracker.clone();
+        let env = self.env.clone();
+        let auth = self.auth.clone();
+        let reconnect_cfg = self.config.clone();
+        let mode = config.mode;
+
+        let task = tokio::spawn(async move {
+            reader_loop(
+                client,
+                env,
+                auth,
+                reconnect_cfg,
+                tracker,
+                event_tx,
+                outgoing_rx,
+                mode,
+            )
+            .await;
+        });
+
+        let receiver = WsEventReceiver::new(event_rx);
+        self.reader = Some(receiver.clone());
+        self.outgoing = Some(outgoing_tx);
+        self.reader_task = Some(task);
+
+        Ok(receiver)
     }
 
     // -----------------------------------------------
@@ -493,9 +729,22 @@ impl KalshiWsClient {
     /// returning [`WsEvent::Reconnected`] on success or
     /// [`WsEvent::Disconnected`] when retries are exhausted.
     pub async fn next_event(&mut self) -> Result<WsEvent, KalshiError> {
-        match self.client.next_message().await {
+        if let Some(reader) = &self.reader {
+            return reader
+                .next()
+                .await
+                .ok_or_else(|| KalshiError::Ws("websocket reader closed".to_string()));
+        }
+
+        let client = self
+            .client
+            .as_mut()
+            .ok_or_else(|| KalshiError::Ws("websocket client not connected".to_string()))?;
+
+        match client.next_message().await {
             Ok(msg) => {
-                self.tracker.handle_message(&msg);
+                let mut tracker = self.tracker.lock().await;
+                tracker.handle_message(&msg);
                 Ok(WsEvent::Message(msg))
             }
             Err(err) => self.reconnect_loop(err).await,
@@ -512,7 +761,7 @@ impl KalshiWsClient {
                 }
             }
 
-            let delay = self.backoff_delay(attempt);
+            let delay = self.config.backoff_delay(attempt);
             if !delay.is_zero() {
                 sleep(delay).await;
             }
@@ -535,31 +784,219 @@ impl KalshiWsClient {
             }
             None => KalshiWsLowLevelClient::connect(self.env.clone()).await?,
         };
-        self.client = new_client;
+        self.client = Some(new_client);
 
         if self.config.resubscribe {
-            let params = self.tracker.prepare_resubscribe();
+            let params = {
+                let mut tracker = self.tracker.lock().await;
+                tracker.prepare_resubscribe()
+            };
             for p in params {
-                let id = self.client.subscribe(p.clone()).await?;
-                self.tracker.record_subscribe_cmd(id, p);
+                let id = self.next_id;
+                self.next_id = self.next_id.saturating_add(1);
+
+                let cmd = WsSubscribeCmd {
+                    id,
+                    cmd: "subscribe",
+                    params: p.clone(),
+                };
+                let text = serde_json::to_string(&cmd)?;
+                let client = self
+                    .client
+                    .as_mut()
+                    .ok_or_else(|| KalshiError::Ws("websocket client not connected".to_string()))?;
+                client.send_raw(Message::Text(text)).await?;
+                let mut tracker = self.tracker.lock().await;
+                tracker.record_subscribe_cmd(id, p);
             }
         }
 
         Ok(())
     }
+}
 
-    fn backoff_delay(&self, attempt: u32) -> Duration {
-        let exp = 2f64.powi(attempt.saturating_sub(1) as i32);
-        let mut delay = self.config.base_delay.mul_f64(exp);
-        if delay > self.config.max_delay {
-            delay = self.config.max_delay;
+#[derive(Debug, Deserialize)]
+#[serde(tag = "type")]
+enum WsControlMessage {
+    #[serde(rename = "subscribed")]
+    Subscribed { id: Option<u64>, sid: Option<u64> },
+    #[serde(rename = "unsubscribed")]
+    Unsubscribed { sid: Option<u64> },
+    #[serde(other)]
+    Other,
+}
+
+async fn reader_loop(
+    mut client: KalshiWsLowLevelClient,
+    env: KalshiEnvironment,
+    auth: Option<KalshiAuth>,
+    config: WsReconnectConfig,
+    tracker: Arc<Mutex<SubscriptionTracker>>,
+    event_tx: mpsc::Sender<WsEvent>,
+    mut outgoing_rx: mpsc::Receiver<Message>,
+    mode: WsReaderMode,
+) {
+    let mut outgoing_closed = false;
+
+    loop {
+        let result: Result<(), KalshiError> = tokio::select! {
+            frame = client.next_frame() => {
+                match frame {
+                    Ok(msg) => handle_incoming_message(msg, &mut client, &tracker, &event_tx, mode).await,
+                    Err(err) => Err(err),
+                }
+            }
+            maybe_out = outgoing_rx.recv(), if !outgoing_closed => {
+                match maybe_out {
+                    Some(msg) => client.send_raw(msg).await,
+                    None => {
+                        outgoing_closed = true;
+                        Ok(())
+                    }
+                }
+            }
+        };
+
+        if let Err(_err) = result {
+            match handle_reconnect(&mut client, &env, &auth, &config, &tracker, &event_tx).await {
+                Ok(()) => {}
+                Err(err) => {
+                    let _ = event_tx.send(WsEvent::Disconnected { error: err }).await;
+                    return;
+                }
+            }
         }
-        let jitter = self.config.jitter.clamp(0.0, 1.0);
-        if jitter > 0.0 {
-            let factor = 1.0 - jitter + random::<f64>() * (2.0 * jitter);
-            delay = delay.mul_f64(factor);
+    }
+}
+
+async fn handle_incoming_message(
+    msg: Message,
+    client: &mut KalshiWsLowLevelClient,
+    tracker: &Arc<Mutex<SubscriptionTracker>>,
+    event_tx: &mpsc::Sender<WsEvent>,
+    mode: WsReaderMode,
+) -> Result<(), KalshiError> {
+    match msg {
+        Message::Ping(payload) => {
+            client.send_raw(Message::Pong(payload)).await?;
+            Ok(())
         }
-        delay
+        Message::Pong(_) => Ok(()),
+        Message::Close(_) => Err(KalshiError::Ws("websocket closed".to_string())),
+        Message::Text(text) => handle_payload(Bytes::from(text), tracker, event_tx, mode).await,
+        Message::Binary(data) => handle_payload(Bytes::from(data), tracker, event_tx, mode).await,
+        _ => Ok(()),
+    }
+}
+
+async fn handle_payload(
+    bytes: Bytes,
+    tracker: &Arc<Mutex<SubscriptionTracker>>,
+    event_tx: &mpsc::Sender<WsEvent>,
+    mode: WsReaderMode,
+) -> Result<(), KalshiError> {
+    match mode {
+        WsReaderMode::Owned => {
+            let msg = WsMessage::from_bytes(&bytes)?;
+            {
+                let mut tracker = tracker.lock().await;
+                tracker.handle_message(&msg);
+            }
+            event_tx
+                .send(WsEvent::Message(msg))
+                .await
+                .map_err(|_| KalshiError::Ws("websocket reader closed".to_string()))?;
+        }
+        WsReaderMode::Raw => {
+            if let Ok(control) = serde_json::from_slice::<WsControlMessage>(&bytes) {
+                let mut tracker = tracker.lock().await;
+                match control {
+                    WsControlMessage::Subscribed { id, sid } => {
+                        tracker.handle_subscribed(id, sid);
+                    }
+                    WsControlMessage::Unsubscribed { sid } => {
+                        tracker.handle_unsubscribed(sid);
+                    }
+                    WsControlMessage::Other => {}
+                }
+            }
+
+            event_tx
+                .send(WsEvent::Raw(WsRawEvent::new(bytes)))
+                .await
+                .map_err(|_| KalshiError::Ws("websocket reader closed".to_string()))?;
+        }
+    }
+
+    Ok(())
+}
+
+async fn handle_reconnect(
+    client: &mut KalshiWsLowLevelClient,
+    env: &KalshiEnvironment,
+    auth: &Option<KalshiAuth>,
+    config: &WsReconnectConfig,
+    tracker: &Arc<Mutex<SubscriptionTracker>>,
+    event_tx: &mpsc::Sender<WsEvent>,
+) -> Result<(), KalshiError> {
+    let mut attempt: u32 = 0;
+    let mut last_err = KalshiError::Ws("websocket disconnected".to_string());
+
+    loop {
+        attempt = attempt.saturating_add(1);
+        if let Some(max) = config.max_retries {
+            if attempt > max {
+                return Err(last_err);
+            }
+        }
+
+        let delay = config.backoff_delay(attempt);
+        if !delay.is_zero() {
+            sleep(delay).await;
+        }
+
+        let reconnect = match auth {
+            Some(auth) => {
+                KalshiWsLowLevelClient::connect_authenticated(env.clone(), auth.clone()).await
+            }
+            None => KalshiWsLowLevelClient::connect(env.clone()).await,
+        };
+
+        match reconnect {
+            Ok(new_client) => {
+                *client = new_client;
+                if config.resubscribe {
+                    let params = {
+                        let mut tracker = tracker.lock().await;
+                        tracker.prepare_resubscribe()
+                    };
+                    let mut resubscribe_err: Option<KalshiError> = None;
+                    for p in params {
+                        match client.subscribe(p.clone()).await {
+                            Ok(id) => {
+                                let mut tracker = tracker.lock().await;
+                                tracker.record_subscribe_cmd(id, p);
+                            }
+                            Err(err) => {
+                                resubscribe_err = Some(err);
+                                break;
+                            }
+                        }
+                    }
+                    if let Some(err) = resubscribe_err {
+                        last_err = err;
+                        continue;
+                    }
+                }
+
+                let _ = event_tx.send(WsEvent::Reconnected { attempt }).await;
+                return Ok(());
+            }
+            Err(err) => {
+                last_err = err;
+                continue;
+            }
+        }
     }
 }
 
@@ -568,8 +1005,11 @@ mod tests {
     use super::*;
     use crate::KalshiEnvironment;
     use crate::ws::types::WsChannel;
-    use tokio::time::Duration;
+    use tokio::net::TcpListener;
+    use tokio::time::{Duration, timeout};
+    use tokio_tungstenite::accept_async;
     use tokio_tungstenite::tungstenite::Message;
+    use url::Url;
 
     #[test]
     fn private_channel_check() {
@@ -650,33 +1090,115 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn reconnect_emits_reconnected_event() {
-        let auth = crate::auth::tests::load_test_auth();
+    async fn reader_backpressure_preserves_messages() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
+        let addr = listener.local_addr().expect("addr");
 
-        let env = KalshiEnvironment::demo();
-        let config = WsReconnectConfig {
-            max_retries: Some(1),
-            base_delay: Duration::from_millis(0),
-            max_delay: Duration::from_millis(0),
-            jitter: 0.0,
-            resubscribe: false,
+        let server = tokio::spawn(async move {
+            let (stream, _) = listener.accept().await.expect("accept");
+            let mut ws = accept_async(stream).await.expect("accept ws");
+            let msg1 = r#"{"type":"ticker","sid":1,"seq":1,"msg":{"market_ticker":"A","market_id":"1","price":1,"yes_bid":1,"yes_ask":2,"price_dollars":"0.01","yes_bid_dollars":"0.01","yes_ask_dollars":"0.02","volume":0,"volume_fp":"0","open_interest":0,"open_interest_fp":"0","dollar_volume":0,"dollar_open_interest":0,"ts":0}}"#;
+            let msg2 = r#"{"type":"ticker","sid":2,"seq":2,"msg":{"market_ticker":"B","market_id":"2","price":1,"yes_bid":1,"yes_ask":2,"price_dollars":"0.01","yes_bid_dollars":"0.01","yes_ask_dollars":"0.02","volume":0,"volume_fp":"0","open_interest":0,"open_interest_fp":"0","dollar_volume":0,"dollar_open_interest":0,"ts":0}}"#;
+            ws.send(Message::Text(msg1.to_string()))
+                .await
+                .expect("send 1");
+            ws.send(Message::Text(msg2.to_string()))
+                .await
+                .expect("send 2");
+        });
+
+        let env = KalshiEnvironment {
+            rest_origin: Url::parse("http://127.0.0.1/").expect("url"),
+            ws_url: format!("ws://{}", addr),
         };
-        let mut client = KalshiWsClient::connect_authenticated(env, auth, config)
+        let mut client = KalshiWsClient::connect(env, WsReconnectConfig::default())
             .await
             .expect("connect");
 
-        // Force close to trigger reconnect on next_event.
-        client
-            .client
-            .write
-            .send(Message::Close(None))
+        let receiver = client
+            .start_reader(WsReaderConfig {
+                buffer_size: 1,
+                mode: WsReaderMode::Owned,
+            })
             .await
-            .expect("close");
+            .expect("start reader");
 
-        let event = client.next_event().await.expect("next_event");
-        match event {
-            WsEvent::Reconnected { .. } => {}
-            other => panic!("expected reconnected event, got {:?}", other),
-        }
+        let first = timeout(Duration::from_secs(2), receiver.next())
+            .await
+            .expect("timeout 1")
+            .expect("event 1");
+        let second = timeout(Duration::from_secs(2), receiver.next())
+            .await
+            .expect("timeout 2")
+            .expect("event 2");
+
+        assert!(matches!(first, WsEvent::Message(_)));
+        assert!(matches!(second, WsEvent::Message(_)));
+
+        server.await.expect("server");
+    }
+
+    #[tokio::test]
+    async fn reader_reconnect_emits_reconnected_event() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
+        let addr = listener.local_addr().expect("addr");
+
+        let server = tokio::spawn(async move {
+            let (stream, _) = listener.accept().await.expect("accept 1");
+            let mut ws = accept_async(stream).await.expect("accept ws 1");
+            let msg1 = r#"{"type":"ticker","sid":1,"seq":1,"msg":{"market_ticker":"A","market_id":"1","price":1,"yes_bid":1,"yes_ask":2,"price_dollars":"0.01","yes_bid_dollars":"0.01","yes_ask_dollars":"0.02","volume":0,"volume_fp":"0","open_interest":0,"open_interest_fp":"0","dollar_volume":0,"dollar_open_interest":0,"ts":0}}"#;
+            ws.send(Message::Text(msg1.to_string()))
+                .await
+                .expect("send 1");
+            ws.close(None).await.expect("close 1");
+
+            let (stream, _) = listener.accept().await.expect("accept 2");
+            let mut ws = accept_async(stream).await.expect("accept ws 2");
+            let msg2 = r#"{"type":"ticker","sid":2,"seq":2,"msg":{"market_ticker":"B","market_id":"2","price":1,"yes_bid":1,"yes_ask":2,"price_dollars":"0.01","yes_bid_dollars":"0.01","yes_ask_dollars":"0.02","volume":0,"volume_fp":"0","open_interest":0,"open_interest_fp":"0","dollar_volume":0,"dollar_open_interest":0,"ts":0}}"#;
+            ws.send(Message::Text(msg2.to_string()))
+                .await
+                .expect("send 2");
+        });
+
+        let env = KalshiEnvironment {
+            rest_origin: Url::parse("http://127.0.0.1/").expect("url"),
+            ws_url: format!("ws://{}", addr),
+        };
+        let config = WsReconnectConfig {
+            max_retries: Some(3),
+            base_delay: Duration::from_millis(10),
+            max_delay: Duration::from_millis(50),
+            jitter: 0.0,
+            resubscribe: false,
+        };
+        let mut client = KalshiWsClient::connect(env, config).await.expect("connect");
+
+        let receiver = client
+            .start_reader(WsReaderConfig {
+                buffer_size: 4,
+                mode: WsReaderMode::Owned,
+            })
+            .await
+            .expect("start reader");
+
+        let first = timeout(Duration::from_secs(2), receiver.next())
+            .await
+            .expect("timeout 1")
+            .expect("event 1");
+        assert!(matches!(first, WsEvent::Message(_)));
+
+        let reconnect = timeout(Duration::from_secs(2), receiver.next())
+            .await
+            .expect("timeout reconnect")
+            .expect("event reconnect");
+        assert!(matches!(reconnect, WsEvent::Reconnected { .. }));
+
+        let second = timeout(Duration::from_secs(2), receiver.next())
+            .await
+            .expect("timeout 2")
+            .expect("event 2");
+        assert!(matches!(second, WsEvent::Message(_)));
+
+        server.await.expect("server");
     }
 }
