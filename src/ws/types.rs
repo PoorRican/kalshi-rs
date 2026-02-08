@@ -8,6 +8,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::value::RawValue;
 use serde_json::{Map, Value};
 use std::borrow::Cow;
+use std::borrow::Cow;
 use std::collections::BTreeMap;
 use std::fmt;
 
@@ -1128,125 +1129,31 @@ impl<'a> WsFillRef<'a> {
 pub struct WsMarketLifecycleV2Ref<'a> {
     #[serde(borrow)]
     pub market_ticker: Cow<'a, str>,
+    /// market status
     #[serde(default)]
-    pub event_type: Option<WsMarketLifecycleEventType>,
+    pub status: Option<MarketStatus>,
     #[serde(default)]
-    pub open_ts: Option<i64>,
+    pub can_trade: Option<bool>,
     #[serde(default)]
-    pub close_ts: Option<i64>,
+    pub can_settle: Option<bool>,
     #[serde(default, borrow)]
-    pub additional_metadata: Option<WsMarketLifecycleAdditionalMetadataRef<'a>>,
+    pub open_time: Option<Cow<'a, str>>,
+    #[serde(default, borrow)]
+    pub close_time: Option<Cow<'a, str>>,
+    #[serde(default, borrow)]
+    pub settled_time: Option<Cow<'a, str>>,
 }
 
 impl<'a> WsMarketLifecycleV2Ref<'a> {
     pub fn into_owned(self) -> WsMarketLifecycleV2 {
         WsMarketLifecycleV2 {
             market_ticker: self.market_ticker.into_owned(),
-            event_type: self.event_type,
-            open_ts: self.open_ts,
-            close_ts: self.close_ts,
-            additional_metadata: self
-                .additional_metadata
-                .map(WsMarketLifecycleAdditionalMetadataRef::into_owned),
-        }
-    }
-}
-
-#[derive(Debug, Clone, Deserialize)]
-pub struct WsMarketLifecycleAdditionalMetadataRef<'a> {
-    #[serde(default, borrow)]
-    pub name: Option<Cow<'a, str>>,
-    #[serde(default, borrow)]
-    pub title: Option<Cow<'a, str>>,
-    #[serde(default, borrow)]
-    pub yes_sub_title: Option<Cow<'a, str>>,
-    #[serde(default, borrow)]
-    pub no_sub_title: Option<Cow<'a, str>>,
-    #[serde(default, borrow)]
-    pub rules_primary: Option<Cow<'a, str>>,
-    #[serde(default, borrow)]
-    pub rules_secondary: Option<Cow<'a, str>>,
-    #[serde(default)]
-    pub can_close_early: Option<bool>,
-    #[serde(default, borrow)]
-    pub event_ticker: Option<Cow<'a, str>>,
-    #[serde(default)]
-    pub expected_expiration_ts: Option<i64>,
-    #[serde(default, borrow)]
-    pub strike_type: Option<Cow<'a, str>>,
-    #[serde(default)]
-    pub floor_strike: Option<i64>,
-    #[serde(default)]
-    pub custom_strike: Option<BTreeMap<String, String>>,
-    #[serde(default, flatten)]
-    pub extra: Map<String, Value>,
-}
-
-impl<'a> WsMarketLifecycleAdditionalMetadataRef<'a> {
-    pub fn into_owned(self) -> WsMarketLifecycleAdditionalMetadata {
-        WsMarketLifecycleAdditionalMetadata {
-            name: self.name.map(Cow::into_owned),
-            title: self.title.map(Cow::into_owned),
-            yes_sub_title: self.yes_sub_title.map(Cow::into_owned),
-            no_sub_title: self.no_sub_title.map(Cow::into_owned),
-            rules_primary: self.rules_primary.map(Cow::into_owned),
-            rules_secondary: self.rules_secondary.map(Cow::into_owned),
-            can_close_early: self.can_close_early,
-            event_ticker: self.event_ticker.map(Cow::into_owned),
-            expected_expiration_ts: self.expected_expiration_ts,
-            strike_type: self.strike_type.map(Cow::into_owned),
-            floor_strike: self.floor_strike,
-            custom_strike: self.custom_strike,
-            extra: self.extra,
-        }
-    }
-}
-
-/// Event lifecycle message (type: "event_lifecycle")
-#[derive(Debug, Clone, Deserialize)]
-pub struct WsEventLifecycleV2Ref<'a> {
-    #[serde(borrow)]
-    pub event_ticker: Cow<'a, str>,
-    #[serde(default, borrow)]
-    pub title: Option<Cow<'a, str>>,
-    #[serde(default, borrow)]
-    pub subtitle: Option<Cow<'a, str>>,
-    #[serde(default, borrow)]
-    pub collateral_return_type: Option<Cow<'a, str>>,
-    #[serde(default, borrow)]
-    pub series_ticker: Option<Cow<'a, str>>,
-    #[serde(default)]
-    pub additional_metadata: Option<WsEventLifecycleAdditionalMetadataRef>,
-}
-
-impl<'a> WsEventLifecycleV2Ref<'a> {
-    pub fn into_owned(self) -> WsEventLifecycleV2 {
-        WsEventLifecycleV2 {
-            event_ticker: self.event_ticker.into_owned(),
-            title: self.title.map(Cow::into_owned),
-            subtitle: self.subtitle.map(Cow::into_owned),
-            collateral_return_type: self.collateral_return_type.map(Cow::into_owned),
-            series_ticker: self.series_ticker.map(Cow::into_owned),
-            additional_metadata: self
-                .additional_metadata
-                .map(WsEventLifecycleAdditionalMetadataRef::into_owned),
-        }
-    }
-}
-
-#[derive(Debug, Clone, Deserialize)]
-pub struct WsEventLifecycleAdditionalMetadataRef {
-    #[serde(default)]
-    pub custom_strike: Option<BTreeMap<String, String>>,
-    #[serde(default, flatten)]
-    pub extra: Map<String, Value>,
-}
-
-impl WsEventLifecycleAdditionalMetadataRef {
-    pub fn into_owned(self) -> WsEventLifecycleAdditionalMetadata {
-        WsEventLifecycleAdditionalMetadata {
-            custom_strike: self.custom_strike,
-            extra: self.extra,
+            status: self.status,
+            can_trade: self.can_trade,
+            can_settle: self.can_settle,
+            open_time: self.open_time.map(Cow::into_owned),
+            close_time: self.close_time.map(Cow::into_owned),
+            settled_time: self.settled_time.map(Cow::into_owned),
         }
     }
 }
@@ -1822,6 +1729,165 @@ impl WsEnvelope {
                 raw: msg,
             }),
             other => Ok(WsMessage::Unknown {
+                msg_type: other,
+                raw: msg,
+            }),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct WsEnvelopeRef<'a> {
+    pub id: Option<u64>,
+    #[serde(rename = "type")]
+    pub msg_type: WsMsgType,
+    pub sid: Option<u64>,
+    pub seq: Option<u64>,
+    #[serde(borrow)]
+    pub msg: Option<&'a RawValue>,
+    #[serde(default, borrow)]
+    pub subscriptions: Option<Vec<WsSubscriptionInfoRef<'a>>>,
+}
+
+fn parse_borrowed_msg<'a, T: Deserialize<'a>>(
+    msg: Option<&'a RawValue>,
+) -> Result<T, serde_json::Error> {
+    let raw = msg.ok_or_else(|| serde_json::Error::custom("missing msg"))?;
+    serde_json::from_str(raw.get())
+}
+
+impl<'a> WsEnvelopeRef<'a> {
+    pub fn msg_raw(&self) -> Option<&str> {
+        self.msg.as_deref().map(|raw| raw.get())
+    }
+
+    pub fn into_message(self) -> Result<WsMessageRef<'a>, KalshiError> {
+        let WsEnvelopeRef {
+            id,
+            msg_type,
+            sid,
+            seq,
+            msg,
+            subscriptions,
+        } = self;
+
+        match msg_type {
+            WsMsgType::Subscribed => Ok(WsMessageRef::Subscribed { id, sid }),
+            WsMsgType::Unsubscribed => Ok(WsMessageRef::Unsubscribed { id, sid }),
+            WsMsgType::Ok => Ok(WsMessageRef::Ok { id }),
+            WsMsgType::ListSubscriptions => {
+                let subs = if msg.is_some() {
+                    let parsed: WsListSubscriptionsRef<'a> = parse_borrowed_msg(msg)?;
+                    parsed.subscriptions
+                } else {
+                    subscriptions.unwrap_or_default()
+                };
+                Ok(WsMessageRef::ListSubscriptions {
+                    id,
+                    subscriptions: subs,
+                })
+            }
+            WsMsgType::Error => {
+                let error = if msg.is_some() {
+                    parse_borrowed_msg::<WsErrorRef<'a>>(msg)?
+                } else {
+                    WsErrorRef {
+                        code: None,
+                        message: None,
+                    }
+                };
+                Ok(WsMessageRef::Error { id, error })
+            }
+            WsMsgType::Ticker => Ok(WsMessageRef::Data(WsDataMessageRef::Ticker {
+                sid,
+                seq,
+                msg: parse_borrowed_msg(msg)?,
+            })),
+            WsMsgType::TickerV2 => Ok(WsMessageRef::Data(WsDataMessageRef::TickerV2 {
+                sid,
+                seq,
+                msg: parse_borrowed_msg(msg)?,
+            })),
+            WsMsgType::Trade => Ok(WsMessageRef::Data(WsDataMessageRef::Trade {
+                sid,
+                seq,
+                msg: parse_borrowed_msg(msg)?,
+            })),
+            WsMsgType::OrderbookSnapshot => {
+                Ok(WsMessageRef::Data(WsDataMessageRef::OrderbookSnapshot {
+                    sid,
+                    seq,
+                    msg: parse_borrowed_msg(msg)?,
+                }))
+            }
+            WsMsgType::OrderbookDelta => Ok(WsMessageRef::Data(WsDataMessageRef::OrderbookDelta {
+                sid,
+                seq,
+                msg: parse_borrowed_msg(msg)?,
+            })),
+            WsMsgType::Fill => Ok(WsMessageRef::Data(WsDataMessageRef::Fill {
+                sid,
+                seq,
+                msg: parse_borrowed_msg(msg)?,
+            })),
+            WsMsgType::MarketPositions => {
+                Ok(WsMessageRef::Data(WsDataMessageRef::MarketPositions {
+                    sid,
+                    seq,
+                    msg: parse_borrowed_msg(msg)?,
+                }))
+            }
+            WsMsgType::MarketLifecycleV2 => {
+                Ok(WsMessageRef::Data(WsDataMessageRef::MarketLifecycleV2 {
+                    sid,
+                    seq,
+                    msg: parse_borrowed_msg(msg)?,
+                }))
+            }
+            WsMsgType::Multivariate | WsMsgType::MultivariateLookup => {
+                Ok(WsMessageRef::Data(WsDataMessageRef::Multivariate {
+                    sid,
+                    seq,
+                    msg: parse_borrowed_msg(msg)?,
+                }))
+            }
+            WsMsgType::RfqCreated => Ok(WsMessageRef::Data(WsDataMessageRef::Communications {
+                sid,
+                seq,
+                msg: WsCommunicationsRef::RfqCreated(parse_borrowed_msg(msg)?),
+            })),
+            WsMsgType::RfqDeleted => Ok(WsMessageRef::Data(WsDataMessageRef::Communications {
+                sid,
+                seq,
+                msg: WsCommunicationsRef::RfqDeleted(parse_borrowed_msg(msg)?),
+            })),
+            WsMsgType::QuoteCreated => Ok(WsMessageRef::Data(WsDataMessageRef::Communications {
+                sid,
+                seq,
+                msg: WsCommunicationsRef::QuoteCreated(parse_borrowed_msg(msg)?),
+            })),
+            WsMsgType::QuoteAccepted => Ok(WsMessageRef::Data(WsDataMessageRef::Communications {
+                sid,
+                seq,
+                msg: WsCommunicationsRef::QuoteAccepted(parse_borrowed_msg(msg)?),
+            })),
+            WsMsgType::QuoteExecuted => Ok(WsMessageRef::Data(WsDataMessageRef::Communications {
+                sid,
+                seq,
+                msg: WsCommunicationsRef::QuoteExecuted(parse_borrowed_msg(msg)?),
+            })),
+            WsMsgType::OrderGroupUpdates => {
+                Ok(WsMessageRef::Data(WsDataMessageRef::OrderGroupUpdates {
+                    sid,
+                    seq,
+                    msg: parse_borrowed_msg(msg)?,
+                }))
+            }
+            WsMsgType::Communications => Ok(WsMessageRef::Unknown {
+                msg_type: WsMsgType::Communications,
+                raw: msg,
+            }),
+            other => Ok(WsMessageRef::Unknown {
                 msg_type: other,
                 raw: msg,
             }),

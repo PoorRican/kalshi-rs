@@ -23,7 +23,7 @@ pub struct KalshiAuthHeaders {
 }
 
 impl KalshiAuth {
-    /// Load a `.key` PEM file (Kalshi UI downloads a private key as `.key`) :contentReference[oaicite:16]{index=16}
+    /// Load a `.key` PEM file (Kalshi UI downloads a private key as `.key`).
     pub fn from_pem_file(
         key_id: impl Into<String>,
         pem_path: impl AsRef<std::path::Path>,
@@ -46,7 +46,7 @@ impl KalshiAuth {
         })
     }
 
-    /// Milliseconds since UNIX epoch, as required by Kalshi auth headers. :contentReference[oaicite:17]{index=17}
+    /// Milliseconds since UNIX epoch, as required by Kalshi auth headers.
     pub fn now_timestamp_ms() -> String {
         let ms = SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -56,8 +56,8 @@ impl KalshiAuth {
     }
 
     /// Create signature for a request:
-    /// message = timestamp + METHOD + path_without_query
-    /// signature = RSA-PSS(SHA256), base64 encoded :contentReference[oaicite:18]{index=18}
+    /// `message = timestamp + METHOD + path_without_query`,
+    /// `signature = RSA-PSS(SHA256)`, base64 encoded.
     pub fn sign(
         &self,
         timestamp_ms: &str,
@@ -70,7 +70,7 @@ impl KalshiAuth {
         // RSA-PSS is randomized; use OS RNG.
         let mut rng = OsRng;
 
-        // PSS with SHA256 (salt length = digest length) per docs :contentReference[oaicite:19]{index=19}
+        // PSS with SHA256 (salt length = digest length) per Kalshi docs.
         let signing_key = SigningKey::<Sha256>::new(self.private_key.clone());
         let signature = signing_key.sign_with_rng(&mut rng, message_bytes);
 
@@ -84,7 +84,7 @@ impl KalshiAuth {
         format!("{timestamp_ms}{method}{path_without_query}")
     }
 
-    /// Build the three headers required by Kalshi authenticated endpoints. :contentReference[oaicite:20]{index=20}
+    /// Build the three headers required by Kalshi authenticated endpoints.
     pub fn build_headers(
         &self,
         method: &str,
@@ -102,12 +102,31 @@ impl KalshiAuth {
 }
 
 #[cfg(test)]
-mod tests {
+pub mod tests {
     use super::KalshiAuth;
     use base64::{Engine as _, engine::general_purpose::STANDARD};
     use rsa::pss::{Signature, VerifyingKey};
     use rsa::signature::Verifier;
     use sha2::Sha256;
+
+    /// Load auth for tests. Optionally loads .env.test, supports both
+    /// KALSHI_PRIVATE_KEY (content) and KALSHI_PRIVATE_KEY_PATH (file path).
+    pub fn load_test_auth() -> KalshiAuth {
+        dotenvy::from_filename(".env.test").ok();
+
+        let key_id = std::env::var("KALSHI_KEY_ID").expect("KALSHI_KEY_ID required");
+
+        if let Ok(pem_content) = std::env::var("KALSHI_PRIVATE_KEY") {
+            let pem_content = pem_content.replace("\\n", "\n");
+            KalshiAuth::from_pem_str(key_id, &pem_content)
+                .expect("load auth from KALSHI_PRIVATE_KEY")
+        } else {
+            let pem_path = std::env::var("KALSHI_PRIVATE_KEY_PATH")
+                .expect("KALSHI_PRIVATE_KEY or KALSHI_PRIVATE_KEY_PATH required");
+            KalshiAuth::from_pem_file(key_id, pem_path)
+                .expect("load auth from KALSHI_PRIVATE_KEY_PATH")
+        }
+    }
 
     #[test]
     fn signing_message_strips_query() {
@@ -121,8 +140,7 @@ mod tests {
 
     #[test]
     fn signature_verifies_with_private_key() {
-        let pem_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("test_key.pem");
-        let auth = KalshiAuth::from_pem_file("test-key", pem_path).expect("load test key");
+        let auth = load_test_auth();
         let headers = auth
             .build_headers("GET", "/trade-api/v2/markets")
             .expect("build headers");

@@ -2,7 +2,7 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use serde_json::Value;
 use std::fmt;
 
-/// Serialize Option<Vec<T>> as a single comma-separated query param.
+/// Serialize `Option<Vec<T>>` as a single comma-separated query param.
 pub fn serialize_csv_opt<T, S>(value: &Option<Vec<T>>, serializer: S) -> Result<S::Ok, S::Error>
 where
     T: fmt::Display,
@@ -74,7 +74,7 @@ where
     deserializer.deserialize_any(StringOrNumber)
 }
 
-/// Deserialize a null or array into a Vec<T> (null maps to empty vec).
+/// Deserialize a null or array into a `Vec<T>` (null maps to empty vec).
 pub fn deserialize_null_as_empty_vec<'de, D, T>(deserializer: D) -> Result<Vec<T>, D::Error>
 where
     D: Deserializer<'de>,

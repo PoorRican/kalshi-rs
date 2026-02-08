@@ -8,17 +8,20 @@ pub fn load_env() {
     dotenvy::from_filename(".env.test").ok();
 }
 
+// integration tests cannot import from unit tests
 #[allow(dead_code)]
 pub fn load_auth() -> KalshiAuth {
+    dotenvy::from_filename(".env.test").ok();
+
     let key_id = std::env::var("KALSHI_KEY_ID").expect("KALSHI_KEY_ID required");
 
-    // Try loading from content first (CI), then from file path (local dev)
     if let Ok(pem_content) = std::env::var("KALSHI_PRIVATE_KEY") {
-        KalshiAuth::from_pem_str(key_id, &pem_content).expect("Failed to load auth from content")
+        let pem_content = pem_content.replace("\\n", "\n");
+        KalshiAuth::from_pem_str(key_id, &pem_content).expect("load auth from KALSHI_PRIVATE_KEY")
     } else {
         let pem_path = std::env::var("KALSHI_PRIVATE_KEY_PATH")
             .expect("KALSHI_PRIVATE_KEY or KALSHI_PRIVATE_KEY_PATH required");
-        KalshiAuth::from_pem_file(key_id, pem_path).expect("Failed to load auth from file")
+        KalshiAuth::from_pem_file(key_id, pem_path).expect("load auth from KALSHI_PRIVATE_KEY_PATH")
     }
 }
 

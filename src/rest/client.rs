@@ -13,9 +13,19 @@ use tokio::sync::Mutex;
 use tokio::time::{Duration, Instant};
 use url::Url;
 
+/// Per-second rate limits for read (GET) and write (POST/DELETE) requests.
+///
+/// The Kalshi API enforces separate rate limits for reads and writes.
+/// Set either value to `0` to disable throttling for that category.
+///
+/// # Default
+///
+/// The default matches the **Basic** tier: 20 read RPS, 10 write RPS.
 #[derive(Debug, Clone, Copy)]
 pub struct RateLimitConfig {
+    /// Maximum GET requests per second (0 = unlimited).
     pub read_rps: u32,
+    /// Maximum POST/DELETE requests per second (0 = unlimited).
     pub write_rps: u32,
 }
 
@@ -29,8 +39,12 @@ impl Default for RateLimitConfig {
     }
 }
 
+/// Named rate-limit tier matching Kalshi's published API tiers.
+///
+/// Pass to [`KalshiRestClient::with_rate_limit_tier`] for quick configuration.
 #[derive(Debug, Clone, Copy)]
 pub enum RateLimitTier {
+    /// 20 read RPS, 10 write RPS.
     Basic,
 }
 
@@ -278,6 +292,38 @@ where
     })
 }
 
+/// Async HTTP client for the Kalshi REST API.
+///
+/// Provides methods for every public and authenticated endpoint, plus
+/// pagination helpers ([`CursorPager`] and `stream_*` methods).
+///
+/// # Construction
+///
+/// ```no_run
+/// use kalshi_fast::{KalshiAuth, KalshiEnvironment, KalshiRestClient};
+///
+/// # fn run() -> Result<(), kalshi_fast::KalshiError> {
+/// let client = KalshiRestClient::new(KalshiEnvironment::demo())
+///     .with_auth(KalshiAuth::from_pem_file("key-id", "key.pem")?)
+///     .with_rate_limit_config(kalshi_fast::RateLimitConfig {
+///         read_rps: 10,
+///         write_rps: 5,
+///     });
+/// # Ok(())
+/// # }
+/// ```
+///
+/// # Public vs Authenticated Endpoints
+///
+/// | Category | Prefix | Auth required |
+/// |----------|--------|---------------|
+/// | Markets, events, trades, series | `/markets`, `/events`, `/series` | No |
+/// | Exchange status / schedule | `/exchange` | No |
+/// | Portfolio (balance, positions, orders, fills) | `/portfolio` | Yes |
+/// | Account limits | `/account` | Yes |
+///
+/// Calling an authenticated endpoint without [`with_auth`](Self::with_auth)
+/// returns [`KalshiError::AuthRequired`](crate::KalshiError::AuthRequired).
 #[derive(Debug, Clone)]
 pub struct KalshiRestClient {
     http: Client,
@@ -287,6 +333,11 @@ pub struct KalshiRestClient {
 }
 
 impl KalshiRestClient {
+    /// Create a new client targeting the given environment (demo or production).
+    ///
+    /// The client starts **unauthenticated** with the Basic rate-limit tier.
+    /// Chain [`with_auth`](Self::with_auth) and/or
+    /// [`with_rate_limit_config`](Self::with_rate_limit_config) as needed.
     pub fn new(env: KalshiEnvironment) -> Self {
         Self {
             http: Client::new(),
@@ -406,11 +457,11 @@ impl KalshiRestClient {
         Ok(serde_json::from_slice::<T>(body_bytes)?)
     }
 
-    // ----------------------------
-    // Public "market data" endpoints
-    // ----------------------------
+    // -----------------------------------------------
+    // Series
+    // -----------------------------------------------
 
-    /// GET /series
+    /// List all series, optionally filtered by category or tags.
     pub async fn get_series_list(
         &self,
         params: GetSeriesListParams,
@@ -426,7 +477,7 @@ impl KalshiRestClient {
         .await
     }
 
-    /// GET /series/{series_ticker}
+    /// Get a single series by ticker.
     pub async fn get_series(&self, series_ticker: &str) -> Result<GetSeriesResponse, KalshiError> {
         let path = Self::full_path(&format!("/series/{series_ticker}"));
         self.send(
@@ -439,7 +490,11 @@ impl KalshiRestClient {
         .await
     }
 
-    /// GET /events  (excludes multivariate events)
+    // -----------------------------------------------
+    // Events
+    // -----------------------------------------------
+
+    /// List events (excludes multivariate events). Supports cursor pagination.
     pub async fn get_events(
         &self,
         params: GetEventsParams,
@@ -456,7 +511,7 @@ impl KalshiRestClient {
         .await
     }
 
-    /// GET /events/{event_ticker}
+    /// Get a single event by ticker, optionally including its nested markets.
     pub async fn get_event(
         &self,
         event_ticker: &str,
@@ -476,7 +531,11 @@ impl KalshiRestClient {
         .await
     }
 
-    /// GET /markets
+    // -----------------------------------------------
+    // Markets
+    // -----------------------------------------------
+
+    /// List markets with optional filters. Supports cursor pagination.
     pub async fn get_markets(
         &self,
         params: GetMarketsParams,
@@ -493,7 +552,7 @@ impl KalshiRestClient {
         .await
     }
 
-    /// GET /markets/{ticker}
+    /// Get a single market by ticker.
     pub async fn get_market(&self, market_ticker: &str) -> Result<GetMarketResponse, KalshiError> {
         let path = Self::full_path(&format!("/markets/{market_ticker}"));
         self.send(
@@ -506,7 +565,7 @@ impl KalshiRestClient {
         .await
     }
 
-    /// GET /markets/{ticker}/orderbook
+    /// Get the order book for a market, optionally limited to `depth` levels per side.
     pub async fn get_market_orderbook(
         &self,
         market_ticker: &str,
@@ -524,7 +583,11 @@ impl KalshiRestClient {
         .await
     }
 
-    /// GET /markets/trades
+    // -----------------------------------------------
+    // Trades
+    // -----------------------------------------------
+
+    /// List public trades. Supports cursor pagination.
     pub async fn get_trades(
         &self,
         params: GetTradesParams,
@@ -540,7 +603,11 @@ impl KalshiRestClient {
         .await
     }
 
-    /// GET /exchange/status
+    // -----------------------------------------------
+    // Exchange
+    // -----------------------------------------------
+
+    /// Get the current exchange status (open, closed, etc.).
     pub async fn get_exchange_status(&self) -> Result<GetExchangeStatusResponse, KalshiError> {
         let path = Self::full_path("/exchange/status");
         self.send(
@@ -553,7 +620,7 @@ impl KalshiRestClient {
         .await
     }
 
-    /// GET /exchange/announcements
+    /// Get exchange announcements.
     pub async fn get_exchange_announcements(
         &self,
     ) -> Result<GetExchangeAnnouncementsResponse, KalshiError> {
@@ -568,7 +635,7 @@ impl KalshiRestClient {
         .await
     }
 
-    /// GET /exchange/schedule
+    /// Get the exchange trading schedule.
     pub async fn get_exchange_schedule(&self) -> Result<GetExchangeScheduleResponse, KalshiError> {
         let path = Self::full_path("/exchange/schedule");
         self.send(
@@ -581,7 +648,7 @@ impl KalshiRestClient {
         .await
     }
 
-    /// GET /exchange/user_data_timestamp
+    /// Get the timestamp of the latest user-data change (useful for cache invalidation).
     pub async fn get_user_data_timestamp(
         &self,
     ) -> Result<GetUserDataTimestampResponse, KalshiError> {
@@ -596,7 +663,7 @@ impl KalshiRestClient {
         .await
     }
 
-    /// GET /series/fee_changes
+    /// List fee changes for a series.
     pub async fn get_series_fee_changes(
         &self,
         params: GetSeriesFeeChangesParams,
@@ -612,11 +679,13 @@ impl KalshiRestClient {
         .await
     }
 
-    // ----------------------------
-    // Authenticated endpoints (portfolio / orders)
-    // ----------------------------
+    // -----------------------------------------------
+    // Portfolio (authenticated)
+    // -----------------------------------------------
 
-    /// GET /portfolio/balance
+    /// Get the account balance.
+    ///
+    /// **Requires auth.**
     pub async fn get_balance(&self) -> Result<GetBalanceResponse, KalshiError> {
         let path = Self::full_path("/portfolio/balance");
         self.send(
@@ -629,7 +698,9 @@ impl KalshiRestClient {
         .await
     }
 
-    /// GET /portfolio/positions
+    /// List open positions. Supports cursor pagination.
+    ///
+    /// **Requires auth.**
     pub async fn get_positions(
         &self,
         params: GetPositionsParams,
@@ -640,7 +711,9 @@ impl KalshiRestClient {
             .await
     }
 
-    /// GET /portfolio/orders
+    /// List orders with optional filters. Supports cursor pagination.
+    ///
+    /// **Requires auth.**
     pub async fn get_orders(
         &self,
         params: GetOrdersParams,
@@ -651,7 +724,13 @@ impl KalshiRestClient {
             .await
     }
 
-    /// POST /portfolio/orders
+    // -----------------------------------------------
+    // Orders (authenticated)
+    // -----------------------------------------------
+
+    /// Place a new order.
+    ///
+    /// **Requires auth.**
     pub async fn create_order(
         &self,
         body: CreateOrderRequest,
@@ -662,7 +741,9 @@ impl KalshiRestClient {
             .await
     }
 
-    /// DELETE /portfolio/orders/{order_id}  (optional `subaccount` query param)
+    /// Cancel an order by ID.
+    ///
+    /// **Requires auth.**
     pub async fn cancel_order(
         &self,
         order_id: &str,
@@ -679,14 +760,18 @@ impl KalshiRestClient {
         .await
     }
 
-    /// GET /portfolio/fills
+    /// List fills (executed trades). Supports cursor pagination.
+    ///
+    /// **Requires auth.**
     pub async fn get_fills(&self, params: GetFillsParams) -> Result<GetFillsResponse, KalshiError> {
         let path = Self::full_path("/portfolio/fills");
         self.send(Method::GET, &path, Some(&params), Option::<&()>::None, true)
             .await
     }
 
-    /// GET /portfolio/settlements
+    /// List settlements. Supports cursor pagination.
+    ///
+    /// **Requires auth.**
     pub async fn get_settlements(
         &self,
         params: GetSettlementsParams,
@@ -696,7 +781,13 @@ impl KalshiRestClient {
             .await
     }
 
-    /// GET /account/limits
+    // -----------------------------------------------
+    // Account (authenticated)
+    // -----------------------------------------------
+
+    /// Get API rate-limit and position limits for the account.
+    ///
+    /// **Requires auth.**
     pub async fn get_account_api_limits(&self) -> Result<GetAccountApiLimitsResponse, KalshiError> {
         let path = Self::full_path("/account/limits");
         self.send(
@@ -709,7 +800,13 @@ impl KalshiRestClient {
         .await
     }
 
-    /// POST /portfolio/subaccounts
+    // -----------------------------------------------
+    // Subaccounts (authenticated)
+    // -----------------------------------------------
+
+    /// Create a new subaccount.
+    ///
+    /// **Requires auth.**
     pub async fn create_subaccount(&self) -> Result<CreateSubaccountResponse, KalshiError> {
         let path = Self::full_path("/portfolio/subaccounts");
         self.send(
@@ -722,7 +819,9 @@ impl KalshiRestClient {
         .await
     }
 
-    /// GET /portfolio/subaccounts/balances
+    /// Get balances for all subaccounts.
+    ///
+    /// **Requires auth.**
     pub async fn get_subaccount_balances(
         &self,
     ) -> Result<GetSubaccountBalancesResponse, KalshiError> {
@@ -737,7 +836,9 @@ impl KalshiRestClient {
         .await
     }
 
-    /// POST /portfolio/subaccounts/transfer
+    /// Transfer funds between subaccounts.
+    ///
+    /// **Requires auth.**
     pub async fn transfer_subaccount(
         &self,
         body: ApplySubaccountTransferRequest,
@@ -747,7 +848,9 @@ impl KalshiRestClient {
             .await
     }
 
-    /// GET /portfolio/subaccounts/transfers
+    /// List subaccount transfers. Supports cursor pagination.
+    ///
+    /// **Requires auth.**
     pub async fn get_subaccount_transfers(
         &self,
         params: GetSubaccountTransfersParams,
@@ -757,7 +860,14 @@ impl KalshiRestClient {
             .await
     }
 
-    /// Generic cursor pagination helper.
+    // -----------------------------------------------
+    // Generic pagination
+    // -----------------------------------------------
+
+    /// Eagerly fetch **all** pages from a cursor-paginated callback into a single `Vec`.
+    ///
+    /// Prefer [`CursorPager`] or the `stream_*` methods when you don't need every item in
+    /// memory at once.
     pub async fn paginate_cursor<T, F, Fut>(
         &self,
         mut cursor: Option<String>,
@@ -778,6 +888,10 @@ impl KalshiRestClient {
         }
         Ok(items)
     }
+
+    // -----------------------------------------------
+    // Pagers — page-level cursor iteration
+    // -----------------------------------------------
 
     /// Create a pager for iterating over events page by page.
     ///
@@ -810,7 +924,7 @@ impl KalshiRestClient {
         })
     }
 
-    /// Create a pager for iterating over markets page by page.
+    /// Create a pager for iterating over markets page by page. See [`CursorPager`].
     pub fn markets_pager(&self, params: GetMarketsParams) -> CursorPager<Market> {
         let client = self.clone();
         let base_params = params.clone();
@@ -825,7 +939,7 @@ impl KalshiRestClient {
         })
     }
 
-    /// Create a pager for iterating over trades page by page.
+    /// Create a pager for iterating over trades page by page. See [`CursorPager`].
     pub fn trades_pager(&self, params: GetTradesParams) -> CursorPager<Trade> {
         let client = self.clone();
         let base_params = params.clone();
@@ -840,7 +954,9 @@ impl KalshiRestClient {
         })
     }
 
-    /// Create a pager for iterating over positions page by page (authenticated).
+    /// Create a pager for iterating over positions page by page.
+    ///
+    /// **Requires auth.** See [`CursorPager`].
     pub fn positions_pager(&self, params: GetPositionsParams) -> CursorPager<PositionsPage> {
         let client = self.clone();
         let base_params = params.clone();
@@ -857,7 +973,9 @@ impl KalshiRestClient {
         })
     }
 
-    /// Create a pager for iterating over orders page by page (authenticated).
+    /// Create a pager for iterating over orders page by page.
+    ///
+    /// **Requires auth.** See [`CursorPager`].
     pub fn orders_pager(&self, params: GetOrdersParams) -> CursorPager<Order> {
         let client = self.clone();
         let base_params = params.clone();
@@ -872,7 +990,9 @@ impl KalshiRestClient {
         })
     }
 
-    /// Create a pager for iterating over fills page by page (authenticated).
+    /// Create a pager for iterating over fills page by page.
+    ///
+    /// **Requires auth.** See [`CursorPager`].
     pub fn fills_pager(&self, params: GetFillsParams) -> CursorPager<Fill> {
         let client = self.clone();
         let base_params = params.clone();
@@ -887,7 +1007,9 @@ impl KalshiRestClient {
         })
     }
 
-    /// Create a pager for iterating over settlements page by page (authenticated).
+    /// Create a pager for iterating over settlements page by page.
+    ///
+    /// **Requires auth.** See [`CursorPager`].
     pub fn settlements_pager(&self, params: GetSettlementsParams) -> CursorPager<Settlement> {
         let client = self.clone();
         let base_params = params.clone();
@@ -902,7 +1024,9 @@ impl KalshiRestClient {
         })
     }
 
-    /// Create a pager for iterating over subaccount transfers page by page (authenticated).
+    /// Create a pager for iterating over subaccount transfers page by page.
+    ///
+    /// **Requires auth.** See [`CursorPager`].
     pub fn subaccount_transfers_pager(
         &self,
         params: GetSubaccountTransfersParams,
@@ -919,6 +1043,10 @@ impl KalshiRestClient {
             })
         })
     }
+
+    // -----------------------------------------------
+    // Streams — item-level async iteration
+    // -----------------------------------------------
 
     /// Stream events one by one.
     ///
@@ -961,7 +1089,9 @@ impl KalshiRestClient {
         stream_items(self.trades_pager(params), max_items)
     }
 
-    /// Stream positions one by one (authenticated).
+    /// Stream positions one by one.
+    ///
+    /// **Requires auth.**
     pub fn stream_positions(
         &self,
         params: GetPositionsParams,
@@ -970,7 +1100,9 @@ impl KalshiRestClient {
         stream_items(self.positions_pager(params), max_items)
     }
 
-    /// Stream orders one by one (authenticated).
+    /// Stream orders one by one.
+    ///
+    /// **Requires auth.**
     pub fn stream_orders(
         &self,
         params: GetOrdersParams,
@@ -979,7 +1111,9 @@ impl KalshiRestClient {
         stream_items(self.orders_pager(params), max_items)
     }
 
-    /// Stream fills one by one (authenticated).
+    /// Stream fills one by one.
+    ///
+    /// **Requires auth.**
     pub fn stream_fills(
         &self,
         params: GetFillsParams,
@@ -988,7 +1122,9 @@ impl KalshiRestClient {
         stream_items(self.fills_pager(params), max_items)
     }
 
-    /// Stream settlements one by one (authenticated).
+    /// Stream settlements one by one.
+    ///
+    /// **Requires auth.**
     pub fn stream_settlements(
         &self,
         params: GetSettlementsParams,
@@ -997,7 +1133,9 @@ impl KalshiRestClient {
         stream_items(self.settlements_pager(params), max_items)
     }
 
-    /// Stream subaccount transfers one by one (authenticated).
+    /// Stream subaccount transfers one by one.
+    ///
+    /// **Requires auth.**
     pub fn stream_subaccount_transfers(
         &self,
         params: GetSubaccountTransfersParams,
@@ -1005,6 +1143,10 @@ impl KalshiRestClient {
     ) -> impl Stream<Item = Result<SubaccountTransfer, KalshiError>> + Send {
         stream_items(self.subaccount_transfers_pager(params), max_items)
     }
+
+    // -----------------------------------------------
+    // Collect-all convenience methods
+    // -----------------------------------------------
 
     /// Fetch all pages for markets using cursor pagination.
     pub async fn get_markets_all(

@@ -25,12 +25,31 @@ use tokio_tungstenite::tungstenite::http::{HeaderValue, Request};
 type WsStream =
     tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>;
 
+/// Configuration for automatic WebSocket reconnection in [`KalshiWsClient`].
+///
+/// Uses exponential backoff with jitter. The delay for attempt *n* is
+/// `min(base_delay * 2^(n-1), max_delay)` ± `jitter`.
+///
+/// # Default
+///
+/// | Field | Value |
+/// |-------|-------|
+/// | `max_retries` | `None` (unlimited) |
+/// | `base_delay` | 250 ms |
+/// | `max_delay` | 30 s |
+/// | `jitter` | 0.2 |
+/// | `resubscribe` | `true` |
 #[derive(Debug, Clone)]
 pub struct WsReconnectConfig {
+    /// Maximum reconnection attempts. `None` means unlimited.
     pub max_retries: Option<u32>,
+    /// Initial backoff delay (doubles each attempt).
     pub base_delay: Duration,
+    /// Upper bound on backoff delay.
     pub max_delay: Duration,
+    /// Random jitter factor applied to each delay (0.0–1.0).
     pub jitter: f64,
+    /// Whether to resubscribe to active channels after reconnecting.
     pub resubscribe: bool,
 }
 
@@ -83,12 +102,28 @@ impl Default for WsReaderConfig {
     }
 }
 
+/// Events emitted by [`KalshiWsClient::next_event`].
+///
+/// The high-level client wraps every raw WebSocket message as well as
+/// connection lifecycle transitions into this enum.
 #[derive(Debug)]
 pub enum WsEvent {
+    /// A parsed WebSocket message (data, ack, error, etc.).
     Message(WsMessage),
     Raw(WsRawEvent),
-    Reconnected { attempt: u32 },
-    Disconnected { error: KalshiError },
+    /// Connection was lost and successfully re-established.
+    ///
+    /// `attempt` is the 1-based retry count that succeeded.
+    /// If [`WsReconnectConfig::resubscribe`] is `true`, all previously
+    /// active channels have already been resubscribed.
+    Reconnected {
+        attempt: u32,
+    },
+    /// Connection was lost and could not be restored within
+    /// [`WsReconnectConfig::max_retries`].
+    Disconnected {
+        error: KalshiError,
+    },
 }
 
 #[derive(Debug, Clone)]
@@ -187,6 +222,15 @@ impl SubscriptionTracker {
     }
 }
 
+/// Low-level WebSocket client with split read/write streams.
+///
+/// Provides direct access to the Kalshi WebSocket protocol: subscribe,
+/// unsubscribe, update, and read raw envelopes or parsed messages.
+/// No automatic reconnection or subscription tracking — use
+/// [`KalshiWsClient`] if you need those.
+///
+/// Read and write halves are split at construction time so sending a
+/// command never blocks receiving data.
 pub struct KalshiWsLowLevelClient {
     write: futures::stream::SplitSink<WsStream, Message>,
     read: futures::stream::SplitStream<WsStream>,
@@ -195,6 +239,10 @@ pub struct KalshiWsLowLevelClient {
 }
 
 impl KalshiWsLowLevelClient {
+    // -----------------------------------------------
+    // Connection
+    // -----------------------------------------------
+
     /// Connect without auth (public channels only).
     pub async fn connect(env: KalshiEnvironment) -> Result<Self, KalshiError> {
         let (ws_stream, _resp) = connect_async(&env.ws_url)
@@ -211,6 +259,8 @@ impl KalshiWsLowLevelClient {
     }
 
     /// Connect with auth headers so you can subscribe to private channels.
+    ///
+    /// **Requires auth.**
     pub async fn connect_authenticated(
         env: KalshiEnvironment,
         auth: KalshiAuth,
@@ -289,7 +339,14 @@ impl KalshiWsLowLevelClient {
         }
     }
 
-    /// Subscribe to channels.
+    // -----------------------------------------------
+    // Commands
+    // -----------------------------------------------
+
+    /// Subscribe to one or more channels. Returns the command `id`.
+    ///
+    /// Private channels (e.g. [`WsChannel::Fill`](crate::WsChannel::Fill))
+    /// require an authenticated connection — see [`connect_authenticated`](Self::connect_authenticated).
     pub async fn subscribe(&mut self, params: WsSubscriptionParams) -> Result<u64, KalshiError> {
         let needs_auth = params.channels.iter().any(|c| c.is_private());
         if needs_auth && !self.authenticated {
@@ -318,7 +375,7 @@ impl KalshiWsLowLevelClient {
         Ok(id)
     }
 
-    /// Unsubscribe from a subscription id.
+    /// Unsubscribe from a subscription by its `sid`. Returns the command `id`.
     pub async fn unsubscribe(&mut self, sid: u64) -> Result<u64, KalshiError> {
         let id = self.next_id;
         self.next_id += 1;
@@ -338,7 +395,7 @@ impl KalshiWsLowLevelClient {
         Ok(id)
     }
 
-    /// Update an existing subscription.
+    /// Update an existing subscription (e.g. change market tickers). Returns the command `id`.
     pub async fn update_subscription(
         &mut self,
         params: WsUpdateSubscriptionParams,
@@ -361,7 +418,7 @@ impl KalshiWsLowLevelClient {
         Ok(id)
     }
 
-    /// List active subscriptions.
+    /// Request a list of active subscriptions from the server. Returns the command `id`.
     pub async fn list_subscriptions(&mut self) -> Result<u64, KalshiError> {
         let id = self.next_id;
         self.next_id += 1;
@@ -379,19 +436,67 @@ impl KalshiWsLowLevelClient {
         Ok(id)
     }
 
+    // -----------------------------------------------
+    // Reading
+    // -----------------------------------------------
+
     /// Read the next JSON envelope from the stream.
+    ///
+    /// Transparently handles Ping/Pong frames. Returns an error on
+    /// Close frames or stream termination.
     pub async fn next_envelope(&mut self) -> Result<WsEnvelope, KalshiError> {
         let bytes = self.next_json_bytes().await?;
         Ok(serde_json::from_slice::<WsEnvelope>(&bytes)?)
     }
 
-    /// Read the next JSON message and parse into a typed WsMessage.
+    /// Read the next message and parse it into a typed [`WsMessage`].
+    ///
+    /// Equivalent to calling [`next_envelope`](Self::next_envelope) followed
+    /// by [`WsEnvelope::into_message`].
     pub async fn next_message(&mut self) -> Result<WsMessage, KalshiError> {
         let bytes = self.next_json_bytes().await?;
         WsMessage::from_bytes(&bytes)
     }
 }
 
+/// High-level WebSocket client with automatic reconnection and resubscription.
+///
+/// Wraps [`KalshiWsLowLevelClient`] and adds:
+/// - Exponential-backoff reconnection (configurable via [`WsReconnectConfig`])
+/// - Subscription tracking — active channels are resubscribed after reconnect
+/// - A unified event loop via [`next_event`](Self::next_event)
+///
+/// # Example
+///
+/// ```no_run
+/// use kalshi_fast::{
+///     KalshiEnvironment, KalshiWsClient, WsChannel,
+///     WsDataMessage, WsEvent, WsMessage, WsReconnectConfig, WsSubscriptionParams,
+/// };
+///
+/// # async fn run() -> Result<(), kalshi_fast::KalshiError> {
+/// let mut ws = KalshiWsClient::connect(
+///     KalshiEnvironment::demo(),
+///     WsReconnectConfig::default(),
+/// ).await?;
+///
+/// ws.subscribe(WsSubscriptionParams {
+///     channels: vec![WsChannel::Trade],
+///     ..Default::default()
+/// }).await?;
+///
+/// loop {
+///     match ws.next_event().await? {
+///         WsEvent::Message(WsMessage::Data(WsDataMessage::Trade { msg, .. })) => {
+///             println!("trade: {} @ {}", msg.ticker, msg.price.unwrap_or(0));
+///         }
+///         WsEvent::Disconnected { .. } => break,
+///         _ => {}
+///     }
+/// }
+/// # Ok(())
+/// # }
+/// ```
 pub struct KalshiWsClient {
     env: KalshiEnvironment,
     auth: Option<KalshiAuth>,
@@ -405,6 +510,11 @@ pub struct KalshiWsClient {
 }
 
 impl KalshiWsClient {
+    // -----------------------------------------------
+    // Connection
+    // -----------------------------------------------
+
+    /// Connect without auth (public channels only).
     pub async fn connect(
         env: KalshiEnvironment,
         config: WsReconnectConfig,
@@ -423,6 +533,9 @@ impl KalshiWsClient {
         })
     }
 
+    /// Connect with auth headers for private channels.
+    ///
+    /// **Requires auth.**
     pub async fn connect_authenticated(
         env: KalshiEnvironment,
         auth: KalshiAuth,
@@ -459,6 +572,14 @@ impl KalshiWsClient {
         ))
     }
 
+    // -----------------------------------------------
+    // Commands
+    // -----------------------------------------------
+
+    /// Subscribe to one or more channels. Returns the command `id`.
+    ///
+    /// The subscription is tracked internally so it can be resubscribed
+    /// automatically after a reconnect.
     pub async fn subscribe(&mut self, params: WsSubscriptionParams) -> Result<u64, KalshiError> {
         let needs_auth = params.channels.iter().any(|c| c.is_private());
         if needs_auth && self.auth.is_none() {
@@ -488,6 +609,7 @@ impl KalshiWsClient {
         Ok(id)
     }
 
+    /// Unsubscribe from a subscription by its `sid`. Returns the command `id`.
     pub async fn unsubscribe(&mut self, sid: u64) -> Result<u64, KalshiError> {
         let id = self.next_id;
         self.next_id = self.next_id.saturating_add(1);
@@ -508,6 +630,7 @@ impl KalshiWsClient {
         Ok(id)
     }
 
+    /// Update an existing subscription (e.g. change market tickers). Returns the command `id`.
     pub async fn update_subscription(
         &mut self,
         params: WsUpdateSubscriptionParams,
@@ -530,6 +653,7 @@ impl KalshiWsClient {
         Ok(id)
     }
 
+    /// Request a list of active subscriptions from the server. Returns the command `id`.
     pub async fn list_subscriptions(&mut self) -> Result<u64, KalshiError> {
         let id = self.next_id;
         self.next_id = self.next_id.saturating_add(1);
@@ -594,6 +718,16 @@ impl KalshiWsClient {
         Ok(receiver)
     }
 
+    // -----------------------------------------------
+    // Event loop
+    // -----------------------------------------------
+
+    /// Wait for the next event (message, reconnect, or disconnect).
+    ///
+    /// This is the primary event-loop driver. On connection loss it
+    /// automatically attempts reconnection per [`WsReconnectConfig`],
+    /// returning [`WsEvent::Reconnected`] on success or
+    /// [`WsEvent::Disconnected`] when retries are exhausted.
     pub async fn next_event(&mut self) -> Result<WsEvent, KalshiError> {
         if let Some(reader) = &self.reader {
             return reader
