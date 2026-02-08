@@ -1,9 +1,10 @@
 //! Unit tests for WebSocket message parsing.
 
 use kalshi_fast::{
-    MarketStatus, WsCommunications, WsDataMessage, WsEnvelope, WsMessage, WsMsgType,
+    WsCommunications, WsDataMessage, WsEnvelope, WsMarketLifecycleEventType, WsMessage, WsMsgType,
     WsOrderGroupEventType, WsOrderbookDelta, WsTicker, YesNo,
 };
+use serde_json::Value;
 
 #[test]
 fn ws_envelope_deserializes_with_sid_and_seq() {
@@ -317,8 +318,16 @@ fn ws_market_lifecycle_v2_message_parses() {
         "type": "market_lifecycle_v2",
         "msg": {
             "market_ticker": "MKT-1",
-            "status": "open",
-            "can_trade": true
+            "event_type": "created",
+            "open_ts": 1700000000,
+            "close_ts": 1700003600,
+            "additional_metadata": {
+                "name": "Test market",
+                "strike_type": "greater",
+                "floor_strike": 123,
+                "custom_strike": {"foo": "bar"},
+                "unknown_field": "keep"
+            }
         }
     }"#;
 
@@ -327,8 +336,77 @@ fn ws_market_lifecycle_v2_message_parses() {
     match msg {
         WsMessage::Data(WsDataMessage::MarketLifecycleV2 { msg, .. }) => {
             assert_eq!(msg.market_ticker, "MKT-1");
-            assert_eq!(msg.status, Some(MarketStatus::Open));
-            assert_eq!(msg.can_trade, Some(true));
+            assert_eq!(msg.event_type, Some(WsMarketLifecycleEventType::Created));
+            assert_eq!(msg.open_ts, Some(1700000000));
+            assert_eq!(msg.close_ts, Some(1700003600));
+            let metadata = msg
+                .additional_metadata
+                .expect("missing additional_metadata");
+            let custom = metadata.custom_strike.expect("missing custom_strike");
+            assert_eq!(custom.get("foo").map(String::as_str), Some("bar"));
+            assert_eq!(
+                metadata.extra.get("unknown_field"),
+                Some(&Value::String("keep".to_string()))
+            );
+        }
+        other => panic!("unexpected: {:?}", other),
+    }
+}
+
+#[test]
+fn ws_event_lifecycle_message_parses() {
+    let json = r#"{
+        "type": "event_lifecycle",
+        "msg": {
+            "event_ticker": "EVT-1",
+            "title": "Event title",
+            "subtitle": "Event subtitle",
+            "collateral_return_type": "standard",
+            "series_ticker": "SER-1",
+            "additional_metadata": {
+                "custom_strike": {"a": "b"},
+                "extra_field": 42
+            }
+        }
+    }"#;
+
+    let env: WsEnvelope = serde_json::from_str(json).unwrap();
+    let msg = env.into_message().unwrap();
+    match msg {
+        WsMessage::Data(WsDataMessage::EventLifecycle { msg, .. }) => {
+            assert_eq!(msg.event_ticker, "EVT-1");
+            assert_eq!(msg.title.as_deref(), Some("Event title"));
+            assert_eq!(msg.subtitle.as_deref(), Some("Event subtitle"));
+            assert_eq!(msg.collateral_return_type.as_deref(), Some("standard"));
+            assert_eq!(msg.series_ticker.as_deref(), Some("SER-1"));
+            let metadata = msg
+                .additional_metadata
+                .expect("missing additional_metadata");
+            let custom = metadata.custom_strike.expect("missing custom_strike");
+            assert_eq!(custom.get("a").map(String::as_str), Some("b"));
+            assert_eq!(
+                metadata.extra.get("extra_field"),
+                Some(&Value::Number(42.into()))
+            );
+        }
+        other => panic!("unexpected: {:?}", other),
+    }
+}
+
+#[test]
+fn ws_event_lifecycle_v2_alias_parses() {
+    let json = r#"{
+        "type": "event_lifecycle_v2",
+        "msg": {
+            "event_ticker": "EVT-ALIAS"
+        }
+    }"#;
+
+    let env: WsEnvelope = serde_json::from_str(json).unwrap();
+    let msg = env.into_message().unwrap();
+    match msg {
+        WsMessage::Data(WsDataMessage::EventLifecycle { msg, .. }) => {
+            assert_eq!(msg.event_ticker, "EVT-ALIAS");
         }
         other => panic!("unexpected: {:?}", other),
     }

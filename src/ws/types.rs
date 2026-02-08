@@ -1,14 +1,14 @@
 use crate::error::KalshiError;
 use crate::rest::types::{EventPosition, MarketPosition};
-use crate::types::{
-    BuySell, FixedPointCount, FixedPointDollars, MarketStatus, TradeTakerSide, YesNo,
-};
+use crate::types::{BuySell, FixedPointCount, FixedPointDollars, TradeTakerSide, YesNo};
 
 use bytes::Bytes;
 use serde::de::{Error as _, Visitor};
 use serde::{Deserialize, Serialize};
 use serde_json::value::RawValue;
+use serde_json::{Map, Value};
 use std::borrow::Cow;
+use std::collections::BTreeMap;
 use std::fmt;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -78,6 +78,7 @@ pub enum WsMsgType {
     Fill,
     MarketPositions,
     MarketLifecycleV2,
+    EventLifecycle,
     Multivariate,
     MultivariateLookup,
     Communications,
@@ -106,6 +107,7 @@ impl WsMsgType {
             WsMsgType::Fill => "fill",
             WsMsgType::MarketPositions => "market_positions",
             WsMsgType::MarketLifecycleV2 => "market_lifecycle_v2",
+            WsMsgType::EventLifecycle => "event_lifecycle",
             WsMsgType::Multivariate => "multivariate",
             WsMsgType::MultivariateLookup => "multivariate_lookup",
             WsMsgType::Communications => "communications",
@@ -134,6 +136,7 @@ impl WsMsgType {
             "fill" => WsMsgType::Fill,
             "market_positions" => WsMsgType::MarketPositions,
             "market_lifecycle_v2" => WsMsgType::MarketLifecycleV2,
+            "event_lifecycle" | "event_lifecycle_v2" => WsMsgType::EventLifecycle,
             "multivariate" => WsMsgType::Multivariate,
             "multivariate_lookup" => WsMsgType::MultivariateLookup,
             "communications" => WsMsgType::Communications,
@@ -162,6 +165,7 @@ impl WsMsgType {
             "fill" => WsMsgType::Fill,
             "market_positions" => WsMsgType::MarketPositions,
             "market_lifecycle_v2" => WsMsgType::MarketLifecycleV2,
+            "event_lifecycle" | "event_lifecycle_v2" => WsMsgType::EventLifecycle,
             "multivariate" => WsMsgType::Multivariate,
             "multivariate_lookup" => WsMsgType::MultivariateLookup,
             "communications" => WsMsgType::Communications,
@@ -431,19 +435,81 @@ pub struct WsFill {
 #[derive(Debug, Clone, Deserialize)]
 pub struct WsMarketLifecycleV2 {
     pub market_ticker: String,
-    /// market status
     #[serde(default)]
-    pub status: Option<MarketStatus>,
+    pub event_type: Option<WsMarketLifecycleEventType>,
     #[serde(default)]
-    pub can_trade: Option<bool>,
+    pub open_ts: Option<i64>,
     #[serde(default)]
-    pub can_settle: Option<bool>,
+    pub close_ts: Option<i64>,
     #[serde(default)]
-    pub open_time: Option<String>,
+    pub additional_metadata: Option<WsMarketLifecycleAdditionalMetadata>,
+}
+
+#[derive(Debug, Clone, Copy, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum WsMarketLifecycleEventType {
+    Created,
+    Activated,
+    Deactivated,
+    CloseDateUpdated,
+    Determined,
+    Settled,
+    #[serde(other)]
+    Unknown,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct WsMarketLifecycleAdditionalMetadata {
     #[serde(default)]
-    pub close_time: Option<String>,
+    pub name: Option<String>,
     #[serde(default)]
-    pub settled_time: Option<String>,
+    pub title: Option<String>,
+    #[serde(default)]
+    pub yes_sub_title: Option<String>,
+    #[serde(default)]
+    pub no_sub_title: Option<String>,
+    #[serde(default)]
+    pub rules_primary: Option<String>,
+    #[serde(default)]
+    pub rules_secondary: Option<String>,
+    #[serde(default)]
+    pub can_close_early: Option<bool>,
+    #[serde(default)]
+    pub event_ticker: Option<String>,
+    #[serde(default)]
+    pub expected_expiration_ts: Option<i64>,
+    #[serde(default)]
+    pub strike_type: Option<String>,
+    #[serde(default)]
+    pub floor_strike: Option<i64>,
+    #[serde(default)]
+    pub custom_strike: Option<BTreeMap<String, String>>,
+    #[serde(default, flatten)]
+    pub extra: Map<String, Value>,
+}
+
+/// Event lifecycle message (type: "event_lifecycle")
+#[derive(Debug, Clone, Deserialize)]
+pub struct WsEventLifecycleV2 {
+    pub event_ticker: String,
+    #[serde(default)]
+    pub title: Option<String>,
+    #[serde(default)]
+    pub subtitle: Option<String>,
+    #[serde(default)]
+    pub collateral_return_type: Option<String>,
+    #[serde(default)]
+    pub series_ticker: Option<String>,
+    #[serde(default)]
+    pub additional_metadata: Option<WsEventLifecycleAdditionalMetadata>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct WsEventLifecycleAdditionalMetadata {
+    #[serde(default)]
+    pub custom_strike: Option<BTreeMap<String, String>>,
+    #[serde(default, flatten)]
+    pub extra: Map<String, Value>,
 }
 
 /// Market positions message (type: "market_positions")
@@ -1062,31 +1128,125 @@ impl<'a> WsFillRef<'a> {
 pub struct WsMarketLifecycleV2Ref<'a> {
     #[serde(borrow)]
     pub market_ticker: Cow<'a, str>,
-    /// market status
     #[serde(default)]
-    pub status: Option<MarketStatus>,
+    pub event_type: Option<WsMarketLifecycleEventType>,
     #[serde(default)]
-    pub can_trade: Option<bool>,
+    pub open_ts: Option<i64>,
     #[serde(default)]
-    pub can_settle: Option<bool>,
+    pub close_ts: Option<i64>,
     #[serde(default, borrow)]
-    pub open_time: Option<Cow<'a, str>>,
-    #[serde(default, borrow)]
-    pub close_time: Option<Cow<'a, str>>,
-    #[serde(default, borrow)]
-    pub settled_time: Option<Cow<'a, str>>,
+    pub additional_metadata: Option<WsMarketLifecycleAdditionalMetadataRef<'a>>,
 }
 
 impl<'a> WsMarketLifecycleV2Ref<'a> {
     pub fn into_owned(self) -> WsMarketLifecycleV2 {
         WsMarketLifecycleV2 {
             market_ticker: self.market_ticker.into_owned(),
-            status: self.status,
-            can_trade: self.can_trade,
-            can_settle: self.can_settle,
-            open_time: self.open_time.map(Cow::into_owned),
-            close_time: self.close_time.map(Cow::into_owned),
-            settled_time: self.settled_time.map(Cow::into_owned),
+            event_type: self.event_type,
+            open_ts: self.open_ts,
+            close_ts: self.close_ts,
+            additional_metadata: self
+                .additional_metadata
+                .map(WsMarketLifecycleAdditionalMetadataRef::into_owned),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct WsMarketLifecycleAdditionalMetadataRef<'a> {
+    #[serde(default, borrow)]
+    pub name: Option<Cow<'a, str>>,
+    #[serde(default, borrow)]
+    pub title: Option<Cow<'a, str>>,
+    #[serde(default, borrow)]
+    pub yes_sub_title: Option<Cow<'a, str>>,
+    #[serde(default, borrow)]
+    pub no_sub_title: Option<Cow<'a, str>>,
+    #[serde(default, borrow)]
+    pub rules_primary: Option<Cow<'a, str>>,
+    #[serde(default, borrow)]
+    pub rules_secondary: Option<Cow<'a, str>>,
+    #[serde(default)]
+    pub can_close_early: Option<bool>,
+    #[serde(default, borrow)]
+    pub event_ticker: Option<Cow<'a, str>>,
+    #[serde(default)]
+    pub expected_expiration_ts: Option<i64>,
+    #[serde(default, borrow)]
+    pub strike_type: Option<Cow<'a, str>>,
+    #[serde(default)]
+    pub floor_strike: Option<i64>,
+    #[serde(default)]
+    pub custom_strike: Option<BTreeMap<String, String>>,
+    #[serde(default, flatten)]
+    pub extra: Map<String, Value>,
+}
+
+impl<'a> WsMarketLifecycleAdditionalMetadataRef<'a> {
+    pub fn into_owned(self) -> WsMarketLifecycleAdditionalMetadata {
+        WsMarketLifecycleAdditionalMetadata {
+            name: self.name.map(Cow::into_owned),
+            title: self.title.map(Cow::into_owned),
+            yes_sub_title: self.yes_sub_title.map(Cow::into_owned),
+            no_sub_title: self.no_sub_title.map(Cow::into_owned),
+            rules_primary: self.rules_primary.map(Cow::into_owned),
+            rules_secondary: self.rules_secondary.map(Cow::into_owned),
+            can_close_early: self.can_close_early,
+            event_ticker: self.event_ticker.map(Cow::into_owned),
+            expected_expiration_ts: self.expected_expiration_ts,
+            strike_type: self.strike_type.map(Cow::into_owned),
+            floor_strike: self.floor_strike,
+            custom_strike: self.custom_strike,
+            extra: self.extra,
+        }
+    }
+}
+
+/// Event lifecycle message (type: "event_lifecycle")
+#[derive(Debug, Clone, Deserialize)]
+pub struct WsEventLifecycleV2Ref<'a> {
+    #[serde(borrow)]
+    pub event_ticker: Cow<'a, str>,
+    #[serde(default, borrow)]
+    pub title: Option<Cow<'a, str>>,
+    #[serde(default, borrow)]
+    pub subtitle: Option<Cow<'a, str>>,
+    #[serde(default, borrow)]
+    pub collateral_return_type: Option<Cow<'a, str>>,
+    #[serde(default, borrow)]
+    pub series_ticker: Option<Cow<'a, str>>,
+    #[serde(default)]
+    pub additional_metadata: Option<WsEventLifecycleAdditionalMetadataRef>,
+}
+
+impl<'a> WsEventLifecycleV2Ref<'a> {
+    pub fn into_owned(self) -> WsEventLifecycleV2 {
+        WsEventLifecycleV2 {
+            event_ticker: self.event_ticker.into_owned(),
+            title: self.title.map(Cow::into_owned),
+            subtitle: self.subtitle.map(Cow::into_owned),
+            collateral_return_type: self.collateral_return_type.map(Cow::into_owned),
+            series_ticker: self.series_ticker.map(Cow::into_owned),
+            additional_metadata: self
+                .additional_metadata
+                .map(WsEventLifecycleAdditionalMetadataRef::into_owned),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct WsEventLifecycleAdditionalMetadataRef {
+    #[serde(default)]
+    pub custom_strike: Option<BTreeMap<String, String>>,
+    #[serde(default, flatten)]
+    pub extra: Map<String, Value>,
+}
+
+impl WsEventLifecycleAdditionalMetadataRef {
+    pub fn into_owned(self) -> WsEventLifecycleAdditionalMetadata {
+        WsEventLifecycleAdditionalMetadata {
+            custom_strike: self.custom_strike,
+            extra: self.extra,
         }
     }
 }
@@ -1615,6 +1775,11 @@ impl WsEnvelope {
                 seq,
                 msg: parse_msg(&msg)?,
             })),
+            WsMsgType::EventLifecycle => Ok(WsMessage::Data(WsDataMessage::EventLifecycle {
+                sid,
+                seq,
+                msg: parse_msg(&msg)?,
+            })),
             WsMsgType::Multivariate | WsMsgType::MultivariateLookup => {
                 Ok(WsMessage::Data(WsDataMessage::Multivariate {
                     sid,
@@ -1772,6 +1937,11 @@ impl<'a> WsEnvelopeRef<'a> {
                     msg: parse_borrowed_msg(msg)?,
                 }))
             }
+            WsMsgType::EventLifecycle => Ok(WsMessageRef::Data(WsDataMessageRef::EventLifecycle {
+                sid,
+                seq,
+                msg: parse_borrowed_msg(msg)?,
+            })),
             WsMsgType::Multivariate | WsMsgType::MultivariateLookup => {
                 Ok(WsMessageRef::Data(WsDataMessageRef::Multivariate {
                     sid,
@@ -1907,6 +2077,11 @@ pub enum WsDataMessage {
         seq: Option<u64>,
         msg: WsMarketLifecycleV2,
     },
+    EventLifecycle {
+        sid: Option<u64>,
+        seq: Option<u64>,
+        msg: WsEventLifecycleV2,
+    },
     Multivariate {
         sid: Option<u64>,
         seq: Option<u64>,
@@ -1965,6 +2140,11 @@ pub enum WsDataMessageRef<'a> {
         sid: Option<u64>,
         seq: Option<u64>,
         msg: WsMarketLifecycleV2Ref<'a>,
+    },
+    EventLifecycle {
+        sid: Option<u64>,
+        seq: Option<u64>,
+        msg: WsEventLifecycleV2Ref<'a>,
     },
     Multivariate {
         sid: Option<u64>,
@@ -2030,6 +2210,11 @@ impl<'a> WsDataMessageRef<'a> {
                     msg: msg.into_owned(),
                 }
             }
+            WsDataMessageRef::EventLifecycle { sid, seq, msg } => WsDataMessage::EventLifecycle {
+                sid,
+                seq,
+                msg: msg.into_owned(),
+            },
             WsDataMessageRef::Multivariate { sid, seq, msg } => WsDataMessage::Multivariate {
                 sid,
                 seq,
@@ -2326,6 +2511,12 @@ enum WsWireMessage {
         seq: Option<u64>,
         msg: WsMarketLifecycleV2,
     },
+    #[serde(rename = "event_lifecycle", alias = "event_lifecycle_v2")]
+    EventLifecycle {
+        sid: Option<u64>,
+        seq: Option<u64>,
+        msg: WsEventLifecycleV2,
+    },
     #[serde(rename = "multivariate")]
     Multivariate {
         sid: Option<u64>,
@@ -2425,6 +2616,9 @@ impl WsWireMessage {
             }
             WsWireMessage::MarketLifecycleV2 { sid, seq, msg } => {
                 WsMessage::Data(WsDataMessage::MarketLifecycleV2 { sid, seq, msg })
+            }
+            WsWireMessage::EventLifecycle { sid, seq, msg } => {
+                WsMessage::Data(WsDataMessage::EventLifecycle { sid, seq, msg })
             }
             WsWireMessage::Multivariate { sid, seq, msg }
             | WsWireMessage::MultivariateLookup { sid, seq, msg } => {
@@ -2551,6 +2745,13 @@ enum WsWireMessageRef<'a> {
         #[serde(borrow)]
         msg: WsMarketLifecycleV2Ref<'a>,
     },
+    #[serde(rename = "event_lifecycle", alias = "event_lifecycle_v2")]
+    EventLifecycle {
+        sid: Option<u64>,
+        seq: Option<u64>,
+        #[serde(borrow)]
+        msg: WsEventLifecycleV2Ref<'a>,
+    },
     #[serde(rename = "multivariate")]
     Multivariate {
         sid: Option<u64>,
@@ -2658,6 +2859,9 @@ impl<'a> WsWireMessageRef<'a> {
             }
             WsWireMessageRef::MarketLifecycleV2 { sid, seq, msg } => {
                 WsMessageRef::Data(WsDataMessageRef::MarketLifecycleV2 { sid, seq, msg })
+            }
+            WsWireMessageRef::EventLifecycle { sid, seq, msg } => {
+                WsMessageRef::Data(WsDataMessageRef::EventLifecycle { sid, seq, msg })
             }
             WsWireMessageRef::Multivariate { sid, seq, msg }
             | WsWireMessageRef::MultivariateLookup { sid, seq, msg } => {
