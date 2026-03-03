@@ -25,7 +25,7 @@ async fn main() -> anyhow::Result<()> {
     while let Some(events) = pager.next_page().await? {
         let all_before_cutoff = events
             .iter()
-            .all(|e| e.close_ts.map_or(false, |ts| ts < cutoff_ts));
+            .all(|e| e.close_ts.is_some_and(|ts| ts < cutoff_ts));
 
         for event in &events {
             println!("{} | close_ts: {:?}", event.event_ticker, event.close_ts);

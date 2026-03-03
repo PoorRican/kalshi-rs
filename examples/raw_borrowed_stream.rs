@@ -1,5 +1,4 @@
 /// Example: consume raw WS events and parse a borrowed view
-use anyhow;
 use kalshi_fast::{
     KalshiEnvironment, KalshiWsClient, WsChannel, WsDataMessageRef, WsEvent, WsMessageRef,
     WsReaderConfig, WsReaderMode, WsReconnectConfig, WsSubscriptionParams,

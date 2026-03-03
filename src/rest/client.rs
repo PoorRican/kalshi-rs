@@ -2585,17 +2585,17 @@ mod tests {
             }
             buffer.extend_from_slice(&chunk[..n]);
 
-            if header_len.is_none() {
-                if let Some(end) = header_end(&buffer) {
-                    header_len = Some(end);
-                    let headers = String::from_utf8_lossy(&buffer[..end]).to_ascii_lowercase();
-                    let content_length = headers
-                        .lines()
-                        .find_map(|line| line.strip_prefix("content-length:"))
-                        .and_then(|value| value.trim().parse::<usize>().ok())
-                        .unwrap_or(0);
-                    required_body_len = Some(content_length);
-                }
+            if header_len.is_none()
+                && let Some(end) = header_end(&buffer)
+            {
+                header_len = Some(end);
+                let headers = String::from_utf8_lossy(&buffer[..end]).to_ascii_lowercase();
+                let content_length = headers
+                    .lines()
+                    .find_map(|line| line.strip_prefix("content-length:"))
+                    .and_then(|value| value.trim().parse::<usize>().ok())
+                    .unwrap_or(0);
+                required_body_len = Some(content_length);
             }
 
             if let (Some(header_len), Some(required_body_len)) = (header_len, required_body_len) {
