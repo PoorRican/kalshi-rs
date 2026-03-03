@@ -2,6 +2,13 @@
 //!
 //! High-performance async Rust client for the [Kalshi](https://kalshi.com) prediction markets API.
 //!
+#![allow(
+    clippy::large_enum_variant,
+    clippy::result_large_err,
+    clippy::too_many_arguments,
+    clippy::type_complexity
+)]
+
 //! ## Features
 //!
 //! - **OpenAPI parity** — full REST operation coverage for the current docs snapshot

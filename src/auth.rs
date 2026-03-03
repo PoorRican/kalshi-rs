@@ -105,6 +105,8 @@ impl KalshiAuth {
 pub mod tests {
     use super::KalshiAuth;
     use base64::{Engine as _, engine::general_purpose::STANDARD};
+    use rand::rngs::OsRng;
+    use rsa::RsaPrivateKey;
     use rsa::pss::{Signature, VerifyingKey};
     use rsa::signature::Verifier;
     use sha2::Sha256;
@@ -114,17 +116,23 @@ pub mod tests {
     pub fn load_test_auth() -> KalshiAuth {
         dotenvy::from_filename(".env.test").ok();
 
-        let key_id = std::env::var("KALSHI_KEY_ID").expect("KALSHI_KEY_ID required");
+        let key_id = std::env::var("KALSHI_KEY_ID").unwrap_or_else(|_| "test-key-id".to_string());
 
         if let Ok(pem_content) = std::env::var("KALSHI_PRIVATE_KEY") {
             let pem_content = pem_content.replace("\\n", "\n");
             KalshiAuth::from_pem_str(key_id, &pem_content)
                 .expect("load auth from KALSHI_PRIVATE_KEY")
-        } else {
-            let pem_path = std::env::var("KALSHI_PRIVATE_KEY_PATH")
-                .expect("KALSHI_PRIVATE_KEY or KALSHI_PRIVATE_KEY_PATH required");
+        } else if let Ok(pem_path) = std::env::var("KALSHI_PRIVATE_KEY_PATH") {
             KalshiAuth::from_pem_file(key_id, pem_path)
                 .expect("load auth from KALSHI_PRIVATE_KEY_PATH")
+        } else {
+            let mut rng = OsRng;
+            let private_key =
+                RsaPrivateKey::new(&mut rng, 2048).expect("generate local test private key");
+            KalshiAuth {
+                key_id,
+                private_key,
+            }
         }
     }
 

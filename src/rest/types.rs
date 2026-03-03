@@ -118,7 +118,6 @@ pub struct GetSeriesResponse {
 }
 
 /// --- Events ---
-
 /// GET /events query params
 #[derive(Debug, Clone, Default, Serialize)]
 pub struct GetEventsParams {

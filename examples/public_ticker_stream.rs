@@ -1,4 +1,3 @@
-use anyhow;
 use kalshi_fast::{
     KalshiAuth, KalshiEnvironment, KalshiWsClient, WsChannel, WsDataMessage, WsEvent, WsMessage,
     WsReaderConfig, WsReconnectConfig, WsSubscriptionParams,

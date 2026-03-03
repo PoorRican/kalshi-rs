@@ -9,7 +9,7 @@ use kalshi_fast::{GetMarketsParams, KalshiEnvironment, KalshiRestClient, Market}
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let client = KalshiRestClient::new(KalshiEnvironment::production());
-    let event_tickers = vec!["INXD-25FEB14", "INXD-25FEB21"]; // example tickers
+    let event_tickers = ["INXD-25FEB14", "INXD-25FEB21"]; // example tickers
 
     let futures: Vec<_> = event_tickers
         .iter()

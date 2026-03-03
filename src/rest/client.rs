@@ -417,6 +417,7 @@ pub struct KalshiRestClientBuilder {
     user_agent: Option<String>,
     default_headers: Option<HeaderMap>,
     proxy: Option<Proxy>,
+    proxy_error: Option<String>,
     http_client: Option<Client>,
 }
 
@@ -432,6 +433,7 @@ impl KalshiRestClientBuilder {
             user_agent: None,
             default_headers: None,
             proxy: None,
+            proxy_error: None,
             http_client: None,
         }
     }
@@ -471,8 +473,21 @@ impl KalshiRestClientBuilder {
         self
     }
 
-    pub fn with_proxy(mut self, proxy: Proxy) -> Self {
-        self.proxy = Some(proxy);
+    /// Configure an HTTP proxy for the internally-built `reqwest::Client`.
+    ///
+    /// Accepts either a concrete [`reqwest::Proxy`] or a `Result<Proxy, reqwest::Error>`
+    /// from helper constructors like [`reqwest::Proxy::all`].
+    pub fn with_proxy(mut self, proxy: impl Into<Result<Proxy, reqwest::Error>>) -> Self {
+        match proxy.into() {
+            Ok(proxy) => {
+                self.proxy = Some(proxy);
+                self.proxy_error = None;
+            }
+            Err(err) => {
+                self.proxy = None;
+                self.proxy_error = Some(err.to_string());
+            }
+        }
         self
     }
 
@@ -485,6 +500,12 @@ impl KalshiRestClientBuilder {
         let http = if let Some(client) = self.http_client {
             client
         } else {
+            if let Some(proxy_error) = self.proxy_error {
+                return Err(KalshiError::InvalidParams(format!(
+                    "invalid proxy configuration: {proxy_error}"
+                )));
+            }
+
             let mut builder = Client::builder();
             if let Some(timeout) = self.timeout {
                 builder = builder.timeout(timeout);
@@ -2564,17 +2585,17 @@ mod tests {
             }
             buffer.extend_from_slice(&chunk[..n]);
 
-            if header_len.is_none() {
-                if let Some(end) = header_end(&buffer) {
-                    header_len = Some(end);
-                    let headers = String::from_utf8_lossy(&buffer[..end]).to_ascii_lowercase();
-                    let content_length = headers
-                        .lines()
-                        .find_map(|line| line.strip_prefix("content-length:"))
-                        .and_then(|value| value.trim().parse::<usize>().ok())
-                        .unwrap_or(0);
-                    required_body_len = Some(content_length);
-                }
+            if header_len.is_none()
+                && let Some(end) = header_end(&buffer)
+            {
+                header_len = Some(end);
+                let headers = String::from_utf8_lossy(&buffer[..end]).to_ascii_lowercase();
+                let content_length = headers
+                    .lines()
+                    .find_map(|line| line.strip_prefix("content-length:"))
+                    .and_then(|value| value.trim().parse::<usize>().ok())
+                    .unwrap_or(0);
+                required_body_len = Some(content_length);
             }
 
             if let (Some(header_len), Some(required_body_len)) = (header_len, required_body_len) {
@@ -2693,6 +2714,29 @@ mod tests {
                 assert_eq!(api_error.code.as_deref(), Some("bad_request"));
                 assert_eq!(api_error.message.as_deref(), Some("invalid"));
                 assert_eq!(api_error.service.as_deref(), Some("trade-api"));
+            }
+            other => panic!("unexpected error: {:?}", other),
+        }
+    }
+
+    #[test]
+    fn builder_accepts_proxy_result_input() {
+        let client = KalshiRestClient::builder(KalshiEnvironment::demo())
+            .with_proxy(reqwest::Proxy::all("http://127.0.0.1:8080"))
+            .build();
+        assert!(client.is_ok());
+    }
+
+    #[test]
+    fn builder_rejects_invalid_proxy_result_input() {
+        let err = KalshiRestClient::builder(KalshiEnvironment::demo())
+            .with_proxy(reqwest::Proxy::all("not a url"))
+            .build()
+            .expect_err("invalid proxy should fail at build");
+
+        match err {
+            KalshiError::InvalidParams(message) => {
+                assert!(message.contains("invalid proxy configuration"));
             }
             other => panic!("unexpected error: {:?}", other),
         }
