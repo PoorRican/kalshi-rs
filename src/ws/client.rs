@@ -484,7 +484,8 @@ impl KalshiWsLowLevelClient {
     /// Close frames or stream termination.
     pub async fn next_envelope(&mut self) -> Result<WsEnvelope, KalshiError> {
         let bytes = self.next_json_bytes().await?;
-        Ok(serde_json::from_slice::<WsEnvelope>(&bytes)?)
+        serde_json::from_slice::<WsEnvelope>(&bytes)
+            .map_err(|source| KalshiError::parse_json("websocket envelope", &bytes, source))
     }
 
     /// Read the next message and parse it into a typed [`WsMessage`].

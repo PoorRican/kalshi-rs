@@ -3054,9 +3054,21 @@ impl WsMessage {
             Ok(wire) => Ok(wire.into_message()),
             Err(first_err) => match serde_json::from_slice::<WsEnvelope>(bytes) {
                 Ok(env) => env.into_message(),
-                Err(_) => Err(first_err.into()),
+                Err(second_err) => Err(KalshiError::parse_reason(
+                    "websocket message",
+                    bytes,
+                    format!(
+                        "failed to parse as WsWireMessage ({first_err}); failed to parse as WsEnvelope ({second_err})"
+                    ),
+                )),
             },
         }
+        .map_err(|err| match err {
+            KalshiError::Json(source) => {
+                KalshiError::parse_json("websocket message payload", bytes, source)
+            }
+            other => other,
+        })
     }
 }
 
@@ -3066,9 +3078,21 @@ impl<'a> WsMessageRef<'a> {
             Ok(wire) => Ok(wire.into_message()),
             Err(first_err) => match serde_json::from_slice::<WsEnvelopeRef<'a>>(bytes) {
                 Ok(env) => env.into_message(),
-                Err(_) => Err(first_err.into()),
+                Err(second_err) => Err(KalshiError::parse_reason(
+                    "websocket borrowed message",
+                    bytes,
+                    format!(
+                        "failed to parse as WsWireMessageRef ({first_err}); failed to parse as WsEnvelopeRef ({second_err})"
+                    ),
+                )),
             },
         }
+        .map_err(|err| match err {
+            KalshiError::Json(source) => {
+                KalshiError::parse_json("websocket borrowed message payload", bytes, source)
+            }
+            other => other,
+        })
     }
 }
 
@@ -3252,6 +3276,38 @@ mod tests {
             }
             _ => panic!("expected unknown message"),
         }
+    }
+
+    #[test]
+    fn ws_message_from_bytes_invalid_json_exposes_raw_bytes_and_reason() {
+        let raw = br#"{"type":"ticker","msg":{"market_ticker":"TEST"}"#;
+        let err = WsMessage::from_bytes(raw).expect_err("invalid JSON should fail");
+        match err {
+            KalshiError::Parse {
+                context,
+                reason,
+                raw: parse_raw,
+                ..
+            } => {
+                assert_eq!(context, "websocket message");
+                assert_eq!(parse_raw.as_slice(), raw);
+                assert!(reason.contains("failed to parse as WsWireMessage"));
+                assert!(reason.contains("failed to parse as WsEnvelope"));
+            }
+            other => panic!("unexpected error: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn ws_message_from_bytes_payload_parse_error_exposes_raw_bytes_and_reason() {
+        let raw = br#"{"type":"ticker","sid":1,"seq":2,"msg":{"market_ticker":"TEST"}}"#;
+        let err = WsMessage::from_bytes(raw).expect_err("invalid payload should fail");
+        assert_eq!(err.parse_context(), Some("websocket message payload"));
+        assert_eq!(err.parse_raw_bytes(), Some(&raw[..]));
+        let reason = err
+            .parse_error_reason()
+            .expect("parse errors should include a reason");
+        assert!(reason.contains("missing field"));
     }
 
     #[test]

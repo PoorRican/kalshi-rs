@@ -727,7 +727,13 @@ impl KalshiRestClient {
                         } else {
                             bytes.as_ref()
                         };
-                        return Ok(serde_json::from_slice::<T>(body_bytes)?);
+                        return serde_json::from_slice::<T>(body_bytes).map_err(|source| {
+                            KalshiError::parse_json(
+                                format!("REST {} {}", method, full_path),
+                                body_bytes,
+                                source,
+                            )
+                        });
                     }
 
                     let should_retry = retry_number < self.retry_config.max_retries
@@ -2717,6 +2723,43 @@ mod tests {
             }
             other => panic!("unexpected error: {:?}", other),
         }
+    }
+
+    #[tokio::test]
+    async fn rest_success_parse_error_exposes_raw_bytes_and_reason() {
+        let body = r#"{"exchange_active":"true","trading_active":true}"#;
+        let (rest_origin, _hits, server) =
+            spawn_http_sequence_server(vec![TestHttpResponse::new(StatusCode::OK, body)]).await;
+
+        let client = KalshiRestClient::builder(test_env(rest_origin))
+            .build()
+            .expect("build client");
+
+        let err = client
+            .get_exchange_status()
+            .await
+            .expect_err("invalid response schema should fail");
+        match err {
+            KalshiError::Parse {
+                context,
+                reason,
+                raw,
+                ..
+            } => {
+                assert_eq!(
+                    context,
+                    format!(
+                        "REST GET {}",
+                        KalshiRestClient::full_path("/exchange/status")
+                    )
+                );
+                assert_eq!(raw, body.as_bytes());
+                assert!(reason.contains("invalid type"));
+            }
+            other => panic!("unexpected error: {other:?}"),
+        }
+
+        server.await.expect("server").expect("server ok");
     }
 
     #[test]
