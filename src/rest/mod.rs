@@ -31,7 +31,7 @@
 //!
 //! ```no_run
 //! use kalshi_fast::{
-//!     GetMarketsParams, KalshiAuth, KalshiEnvironment,
+//!     GetBalanceParams, GetMarketsParams, KalshiAuth, KalshiEnvironment,
 //!     KalshiRestClient, MarketStatusQuery,
 //! };
 //!
@@ -51,7 +51,7 @@
 //!     .await?;
 //!
 //! // Authenticated endpoint
-//! let balance = client.get_balance().await?;
+//! let balance = client.get_balance(GetBalanceParams::default()).await?;
 //! println!("balance: {}", balance.balance);
 //! # Ok(())
 //! # }

@@ -207,8 +207,6 @@ pub struct Market {
     #[serde(default)]
     pub event_id: Option<i64>,
     #[serde(default)]
-    pub response_price_units: Option<String>,
-    #[serde(default)]
     pub settlement_timer_seconds: Option<i64>,
     #[serde(default)]
     pub price_level_structure: Option<String>,
@@ -282,8 +280,6 @@ pub struct Market {
     pub open_interest: Option<i64>,
     #[serde(default)]
     pub open_interest_fp: Option<String>,
-    #[serde(default)]
-    pub fractional_trading_enabled: Option<bool>,
     #[serde(default)]
     pub notional_value: Option<i64>,
     #[serde(default)]

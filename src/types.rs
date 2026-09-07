@@ -126,8 +126,6 @@ pub struct ErrorResponse {
     pub message: Option<String>,
     #[serde(default)]
     pub details: Option<String>,
-    #[serde(default)]
-    pub service: Option<String>,
 }
 
 /// --- Fee Type ---
@@ -137,6 +135,9 @@ pub struct ErrorResponse {
 pub enum FeeType {
     Quadratic,
     QuadraticWithMakerFees,
+    /// Same maker-fee structure as `QuadraticWithMakerFees` but with a 0.5
+    /// maker multiplier (instead of 0.25) for combo trades.
+    QuadraticWithComboMakerFees,
     Flat,
     #[serde(other)]
     Unknown,

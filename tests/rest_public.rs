@@ -302,21 +302,6 @@ async fn test_get_exchange_status() {
 }
 
 #[tokio::test]
-async fn test_get_exchange_announcements() {
-    let client = common::demo_client();
-    let resp = tokio::time::timeout(common::TEST_TIMEOUT, async {
-        client.get_exchange_announcements().await
-    })
-    .await
-    .expect("timeout")
-    .expect("request failed");
-
-    if let Some(first) = resp.announcements.first() {
-        assert!(!first.message.is_empty());
-    }
-}
-
-#[tokio::test]
 async fn test_get_exchange_schedule() {
     let client = common::demo_client();
     let resp = tokio::time::timeout(common::TEST_TIMEOUT, async {

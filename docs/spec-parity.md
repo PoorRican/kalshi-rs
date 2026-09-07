@@ -91,6 +91,56 @@ examples are ambiguous.
   (`ts_ms` on ticker/trade/order-group messages, the legacy direction fields). These are modeled as
   `Option` so parsing never fails on their absence.
 
+- The WebSocket error message's inner text field is wire-named `msg` (nested under the envelope's
+  own `msg` object, i.e. `{"type":"error","msg":{"code":7,"msg":"..."}}`), not `message`. `WsError` /
+  `WsErrorRef` use `#[serde(rename = "msg")]` on the Rust field `message` to reflect this — confirmed
+  against the AsyncAPI `errorResponsePayload` schema (2026-09-10 docs correction; the wire behavior
+  itself was not new). `sid`/`seq` on a subscription-scoped error are carried by the same top-level
+  envelope fields used for every other message type, so no separate handling was needed once the
+  field-name fix landed. Error codes 6, 16, and 17 are retired (never emitted, numbers reserved); the
+  crate treats `WsError.code` as an opaque `Option<i64>` so no enum needed updating.
+
+- The legacy `/portfolio/orders` mutation endpoints (`create_order`, `cancel_order`, `amend_order`,
+  `decrease_order`, `batch_create_orders`, `batch_cancel_orders`) were deprecated 2026-06-18/25 and,
+  as of the current OpenAPI spec, no longer appear in the documented surface at all — only
+  `GET /portfolio/orders` and `GET /portfolio/orders/{order_id}` remain. Live calls to the mutation
+  endpoints now return an error directing callers to the V2 event-order endpoints. The six Rust
+  methods are marked `#[deprecated]` (pointing at their `*_v2` equivalents) rather than removed, since
+  they still make syntactically valid requests and removing them would be a larger break than the
+  upstream migration calls for. New code should use `create_order_v2` / `cancel_order_v2` /
+  `amend_order_v2` / `decrease_order_v2` / `batch_create_orders_v2` / `batch_cancel_orders_v2`.
+
+- `IncentiveProgram.incentive_description` is required upstream (non-`Option`); `target_size` (a
+  legacy plain-integer field) is no longer in the schema and was removed — only `target_size_fp`
+  remains. `max_reward_per_account` (`margin_maker_volume` programs only) is `Option<i64>`.
+
+- `exchange_index` (`ExchangeIndex`, a plain `u32` shard identifier) was added across a wide swath of
+  the upstream surface in 2026-07/08 as Kalshi rolled out exchange sharding. Every REST/WS type the
+  crate already models that gained the field is `Option<u32>`, even where upstream marks it required,
+  matching this crate's general defensive-parsing convention.
+
+## Known Gaps (Upstream Surfaces Not Modeled)
+
+These upstream REST endpoints and WebSocket channels are not implemented in the crate. They were
+each introduced or changed by a changelog entry during the 2026-06-08 → 2026-09-10 refresh window,
+but adding full support was judged out of scope for that pass. Listed so a future refresh doesn't
+have to re-discover them:
+
+- Margin exchange: markets, positions, risk, order groups, exit triggers, cancel-all, and most
+  margin-specific fields are not modeled. Only `GET /margin/fee_tiers` is implemented.
+- FIX API (order entry, market data, drop-copy) is entirely out of scope — this crate is REST/WebSocket only.
+- New REST endpoints not yet wrapped: `GET /live_data/weather/{city}` and
+  `.../calibrations`, `GET /live_data/events/{event_ticker}`, `GET /margin/fee_tier_rates`,
+  `POST /portfolio/target_balance_allocation` (+ `GET`), `POST /portfolio/intra_exchange_instance_transfer`,
+  `GET/POST /portfolio/intra_exchange_instance_transfers*`, cancel-all-orders endpoints,
+  `GET /account/api_usage_level/volume_progress`, `POST /account/api_usage_level/upgrade`,
+  RFQ-scoped quote action endpoints (`.../rfqs/{rfq_id}/quotes/{quote_id}/*`), the RFQ-scoped quote
+  lookup endpoint (`GET .../rfqs/{rfq_id}/quotes/{quote_id}`).
+- New WebSocket channels not yet wrapped: `pyth_value`, `cfbenchmarks_value_5hz`.
+- `PUT /order_groups/{order_group_id}/limit` and multivariate event collection responses also gained
+  `exchange_index`/`subaccount` fields not yet surfaced (order groups aren't otherwise exchange-index
+  aware in this crate).
+
 ## Test Strategy
 
 - Deterministic parsing and behavior checks: `tests/parsing.rs`,

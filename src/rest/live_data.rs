@@ -39,7 +39,9 @@ pub struct IncentiveProgram {
     pub id: String,
     pub market_id: String,
     pub market_ticker: String,
+    /// `"liquidity"`, `"volume"`, or `"margin_maker_volume"` (added 2026-08-27).
     pub incentive_type: String,
+    pub incentive_description: String,
     pub start_date: String,
     pub end_date: String,
     pub period_reward: i64,
@@ -47,9 +49,11 @@ pub struct IncentiveProgram {
     #[serde(default)]
     pub discount_factor_bps: Option<i32>,
     #[serde(default)]
-    pub target_size: Option<i32>,
-    #[serde(default)]
     pub target_size_fp: Option<FixedPointCount>,
+    /// Maximum reward per account in centi-cents. Only applies to
+    /// `margin_maker_volume` programs. Added 2026-08-27.
+    #[serde(default)]
+    pub max_reward_per_account: Option<i64>,
     #[serde(default, flatten)]
     pub extra: Map<String, Value>,
 }

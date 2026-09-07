@@ -112,18 +112,6 @@ pub(super) enum WsWireMessage {
         seq: Option<u64>,
         msg: WsEventFeeUpdate,
     },
-    #[serde(rename = "multivariate")]
-    Multivariate {
-        sid: Option<u64>,
-        seq: Option<u64>,
-        msg: WsMultivariate,
-    },
-    #[serde(rename = "multivariate_lookup")]
-    MultivariateLookup {
-        sid: Option<u64>,
-        seq: Option<u64>,
-        msg: WsMultivariate,
-    },
     #[serde(rename = "rfq_created")]
     RfqCreated {
         sid: Option<u64>,
@@ -267,10 +255,6 @@ impl WsWireMessage {
             }
             WsWireMessage::EventFeeUpdate { sid, seq, msg } => {
                 WsMessageV2::Data(WsDataMessageV2::EventFeeUpdate { sid, seq, msg })
-            }
-            WsWireMessage::Multivariate { sid, seq, msg }
-            | WsWireMessage::MultivariateLookup { sid, seq, msg } => {
-                WsMessageV2::Data(WsDataMessageV2::Multivariate { sid, seq, msg })
             }
             WsWireMessage::RfqCreated { sid, seq, msg } => {
                 WsMessageV2::Data(WsDataMessageV2::Communications {
@@ -436,20 +420,6 @@ pub(super) enum WsWireMessageRef<'a> {
         #[serde(borrow)]
         msg: WsEventFeeUpdateRef<'a>,
     },
-    #[serde(rename = "multivariate")]
-    Multivariate {
-        sid: Option<u64>,
-        seq: Option<u64>,
-        #[serde(borrow)]
-        msg: WsMultivariateRef<'a>,
-    },
-    #[serde(rename = "multivariate_lookup")]
-    MultivariateLookup {
-        sid: Option<u64>,
-        seq: Option<u64>,
-        #[serde(borrow)]
-        msg: WsMultivariateRef<'a>,
-    },
     #[serde(rename = "rfq_created")]
     RfqCreated {
         sid: Option<u64>,
@@ -602,10 +572,6 @@ impl<'a> WsWireMessageRef<'a> {
             }
             WsWireMessageRef::EventFeeUpdate { sid, seq, msg } => {
                 WsMessageRef::Data(WsDataMessageRef::EventFeeUpdate { sid, seq, msg })
-            }
-            WsWireMessageRef::Multivariate { sid, seq, msg }
-            | WsWireMessageRef::MultivariateLookup { sid, seq, msg } => {
-                WsMessageRef::Data(WsDataMessageRef::Multivariate { sid, seq, msg })
             }
             WsWireMessageRef::RfqCreated { sid, seq, msg } => {
                 WsMessageRef::Data(WsDataMessageRef::Communications {

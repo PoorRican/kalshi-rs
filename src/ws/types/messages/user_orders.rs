@@ -58,4 +58,7 @@ pub struct WsUserOrder {
     pub expiration_ts_ms: Option<i64>,
     #[serde(default)]
     pub subaccount_number: Option<u32>,
+    /// Identifier for the exchange shard where the order resides. Added 2026-08-27.
+    #[serde(default)]
+    pub exchange_index: Option<u32>,
 }

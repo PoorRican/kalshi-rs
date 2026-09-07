@@ -46,6 +46,10 @@ pub struct GetOrdersParams {
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub subaccount: Option<u32>,
+
+    /// Filter by exchange shard. Omit to return results from all shards. Added 2026-08-20.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub exchange_index: Option<u32>,
 }
 
 impl GetOrdersParams {
@@ -691,7 +695,19 @@ pub struct BatchCancelOrdersV2Response {
 
 #[derive(Debug, Clone, Default, Serialize)]
 pub struct GetFcmOrdersParams {
-    pub subtrader_id: String,
+    /// Required unless `client_order_ids` is supplied. Added 2026-09-03: no
+    /// longer required on its own now that `client_order_ids` can be used
+    /// instead (supplying both filters by both).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub subtrader_id: Option<String>,
+    /// Client order IDs to filter by (max 100). Only orders created within
+    /// the last 24 hours are searched. Required unless `subtrader_id` is
+    /// supplied. Added 2026-09-03.
+    #[serde(
+        skip_serializing_if = "Option::is_none",
+        serialize_with = "serialize_csv_opt"
+    )]
+    pub client_order_ids: Option<Vec<String>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub cursor: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -742,6 +758,12 @@ impl KalshiRestClient {
     /// Place a new order.
     ///
     /// **Requires auth.**
+    #[deprecated(
+        since = "0.8.0",
+        note = "Legacy /portfolio/orders mutation endpoints were deprecated 2026-06-18/25; \
+                the exchange now rejects calls with a message to switch to the V2 endpoints. \
+                Use `create_order_v2` instead."
+    )]
     pub async fn create_order(
         &self,
         body: CreateOrderRequest,
@@ -755,6 +777,12 @@ impl KalshiRestClient {
     /// Cancel an order by ID.
     ///
     /// **Requires auth.**
+    #[deprecated(
+        since = "0.8.0",
+        note = "Legacy /portfolio/orders mutation endpoints were deprecated 2026-06-18/25; \
+                the exchange now rejects calls with a message to switch to the V2 endpoints. \
+                Use `cancel_order_v2` instead."
+    )]
     pub async fn cancel_order(
         &self,
         order_id: &str,
@@ -771,6 +799,15 @@ impl KalshiRestClient {
         .await
     }
 
+    /// Amend an order (legacy).
+    ///
+    /// **Requires auth.**
+    #[deprecated(
+        since = "0.8.0",
+        note = "Legacy /portfolio/orders mutation endpoints were deprecated 2026-06-18/25; \
+                the exchange now rejects calls with a message to switch to the V2 endpoints. \
+                Use `amend_order_v2` instead."
+    )]
     pub async fn amend_order(
         &self,
         order_id: &str,
@@ -781,6 +818,15 @@ impl KalshiRestClient {
             .await
     }
 
+    /// Decrease an order's remaining count (legacy).
+    ///
+    /// **Requires auth.**
+    #[deprecated(
+        since = "0.8.0",
+        note = "Legacy /portfolio/orders mutation endpoints were deprecated 2026-06-18/25; \
+                the exchange now rejects calls with a message to switch to the V2 endpoints. \
+                Use `decrease_order_v2` instead."
+    )]
     pub async fn decrease_order(
         &self,
         order_id: &str,
@@ -803,6 +849,15 @@ impl KalshiRestClient {
         .await
     }
 
+    /// Batch-create orders (legacy).
+    ///
+    /// **Requires auth.**
+    #[deprecated(
+        since = "0.8.0",
+        note = "Legacy /portfolio/orders mutation endpoints were deprecated 2026-06-18/25; \
+                the exchange now rejects calls with a message to switch to the V2 endpoints. \
+                Use `batch_create_orders_v2` instead."
+    )]
     pub async fn batch_create_orders(
         &self,
         body: BatchCreateOrdersRequest,
@@ -812,6 +867,15 @@ impl KalshiRestClient {
             .await
     }
 
+    /// Batch-cancel orders (legacy).
+    ///
+    /// **Requires auth.**
+    #[deprecated(
+        since = "0.8.0",
+        note = "Legacy /portfolio/orders mutation endpoints were deprecated 2026-06-18/25; \
+                the exchange now rejects calls with a message to switch to the V2 endpoints. \
+                Use `batch_cancel_orders_v2` instead."
+    )]
     pub async fn batch_cancel_orders(
         &self,
         body: BatchCancelOrdersRequest,

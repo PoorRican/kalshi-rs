@@ -15,7 +15,6 @@
 //! | [`WsChannelV2::Trade`] | No | Public trades |
 //! | [`WsChannelV2::MarketLifecycleV2`] | No | Market open / close / settle events |
 //! | [`WsChannelV2::MultivariateMarketLifecycle`] | No | Multivariate market lifecycle events |
-//! | [`WsChannelV2::Multivariate`] | No | Multivariate market lookups |
 //! | [`WsChannelV2::OrderbookDelta`] | Yes | L2 order-book deltas (requires `market_tickers`) |
 //! | [`WsChannelV2::Fill`] | Yes | Your fills |
 //! | [`WsChannelV2::MarketPositions`] | Yes | Position changes |

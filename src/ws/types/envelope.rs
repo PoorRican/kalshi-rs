@@ -20,7 +20,8 @@ pub struct WsListSubscriptions {
 pub struct WsError {
     #[serde(default)]
     pub code: Option<i64>,
-    #[serde(default)]
+    /// Human-readable error text. The wire key is `msg`, not `message`.
+    #[serde(default, rename = "msg")]
     pub message: Option<String>,
 }
 
@@ -46,7 +47,8 @@ impl<'a> WsListSubscriptionsRef<'a> {
 pub struct WsErrorRef<'a> {
     #[serde(default)]
     pub code: Option<i64>,
-    #[serde(default, borrow)]
+    /// Human-readable error text. The wire key is `msg`, not `message`.
+    #[serde(default, rename = "msg", borrow)]
     pub message: Option<Cow<'a, str>>,
 }
 
@@ -212,13 +214,6 @@ impl WsEnvelope {
                 seq,
                 msg: parse_msg(&msg)?,
             })),
-            WsMsgType::Multivariate | WsMsgType::MultivariateLookup => {
-                Ok(WsMessageV2::Data(WsDataMessageV2::Multivariate {
-                    sid,
-                    seq,
-                    msg: parse_msg(&msg)?,
-                }))
-            }
             WsMsgType::RfqCreated => Ok(WsMessageV2::Data(WsDataMessageV2::Communications {
                 sid,
                 seq,
@@ -437,13 +432,6 @@ impl<'a> WsEnvelopeRef<'a> {
                 seq,
                 msg: parse_borrowed_msg(msg)?,
             })),
-            WsMsgType::Multivariate | WsMsgType::MultivariateLookup => {
-                Ok(WsMessageRef::Data(WsDataMessageRef::Multivariate {
-                    sid,
-                    seq,
-                    msg: parse_borrowed_msg(msg)?,
-                }))
-            }
             WsMsgType::RfqCreated => Ok(WsMessageRef::Data(WsDataMessageRef::Communications {
                 sid,
                 seq,
@@ -601,11 +589,6 @@ pub enum WsDataMessageV2 {
         seq: Option<u64>,
         msg: WsEventFeeUpdate,
     },
-    Multivariate {
-        sid: Option<u64>,
-        seq: Option<u64>,
-        msg: WsMultivariate,
-    },
     Communications {
         sid: Option<u64>,
         seq: Option<u64>,
@@ -646,7 +629,6 @@ macro_rules! data_message_position {
             | Self::MultivariateMarketLifecycle { $field, .. }
             | Self::EventLifecycle { $field, .. }
             | Self::EventFeeUpdate { $field, .. }
-            | Self::Multivariate { $field, .. }
             | Self::Communications { $field, .. }
             | Self::OrderGroupUpdates { $field, .. }
             | Self::UserOrder { $field, .. }
@@ -717,11 +699,6 @@ pub enum WsDataMessageRef<'a> {
         sid: Option<u64>,
         seq: Option<u64>,
         msg: WsEventFeeUpdateRef<'a>,
-    },
-    Multivariate {
-        sid: Option<u64>,
-        seq: Option<u64>,
-        msg: WsMultivariateRef<'a>,
     },
     Communications {
         sid: Option<u64>,
@@ -815,11 +792,6 @@ impl<'a> WsDataMessageRef<'a> {
                 msg: msg.into_owned(),
             },
             WsDataMessageRef::EventFeeUpdate { sid, seq, msg } => WsDataMessageV2::EventFeeUpdate {
-                sid,
-                seq,
-                msg: msg.into_owned(),
-            },
-            WsDataMessageRef::Multivariate { sid, seq, msg } => WsDataMessageV2::Multivariate {
                 sid,
                 seq,
                 msg: msg.into_owned(),
@@ -1251,7 +1223,9 @@ mod tests {
 
         let msg = WsMessageV2::from_bytes(json.as_bytes()).unwrap();
         match msg {
-            WsMessageV2::ListSubscriptions { id, subscriptions } => {
+            WsMessageV2::ListSubscriptions {
+                id, subscriptions, ..
+            } => {
                 assert_eq!(id, Some(3));
                 assert_eq!(subscriptions.len(), 1);
                 assert_eq!(subscriptions[0].shard_factor, Some(4));
@@ -1262,7 +1236,9 @@ mod tests {
 
         let msg_ref = WsMessageRef::from_bytes(json.as_bytes()).unwrap();
         match msg_ref {
-            WsMessageRef::ListSubscriptions { id, subscriptions } => {
+            WsMessageRef::ListSubscriptions {
+                id, subscriptions, ..
+            } => {
                 assert_eq!(id, Some(3));
                 assert_eq!(subscriptions.len(), 1);
                 assert_eq!(subscriptions[0].shard_factor, Some(4));
