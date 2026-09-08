@@ -46,6 +46,10 @@ pub struct GetOrdersParams {
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub subaccount: Option<u32>,
+
+    /// Filter to a single exchange shard. Omit to return results from all shards.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub exchange_index: Option<i64>,
 }
 
 impl GetOrdersParams {
@@ -443,6 +447,15 @@ pub struct UpdateOrderGroupLimitRequest {
     pub contracts_limit_fp: Option<FixedPointCount>,
 }
 
+/// Query params for Update Order Group Limit.
+#[derive(Debug, Clone, Default, Serialize)]
+pub struct UpdateOrderGroupLimitParams {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub subaccount: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub exchange_index: Option<i64>,
+}
+
 #[derive(Debug, Clone, Serialize)]
 pub struct BatchCreateOrdersRequest {
     pub orders: Vec<CreateOrderRequest>,
@@ -691,7 +704,9 @@ pub struct BatchCancelOrdersV2Response {
 
 #[derive(Debug, Clone, Default, Serialize)]
 pub struct GetFcmOrdersParams {
-    pub subtrader_id: String,
+    /// Required unless `client_order_ids` is provided.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub subtrader_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub cursor: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -706,6 +721,15 @@ pub struct GetFcmOrdersParams {
     pub status: Option<OrderStatus>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub limit: Option<u32>,
+    /// Up to 100 client order IDs (comma-separated). Only searches orders created
+    /// within the last 24 hours; a `min_ts` earlier than that is raised to match.
+    /// At least one of `subtrader_id` or `client_order_ids` is required.
+    /// Added 2026-09-03.
+    #[serde(
+        skip_serializing_if = "Option::is_none",
+        serialize_with = "serialize_csv_opt"
+    )]
+    pub client_order_ids: Option<Vec<String>>,
 }
 
 #[derive(Debug, Clone, Default, Serialize)]
@@ -741,7 +765,11 @@ impl KalshiRestClient {
 
     /// Place a new order.
     ///
+    /// Deprecated 2026-06-18: legacy `/portfolio/orders` mutation endpoints are being
+    /// phased out. Use [`Self::create_order_v2`].
+    ///
     /// **Requires auth.**
+    #[deprecated(since = "0.8.0", note = "use create_order_v2")]
     pub async fn create_order(
         &self,
         body: CreateOrderRequest,
@@ -754,7 +782,10 @@ impl KalshiRestClient {
 
     /// Cancel an order by ID.
     ///
+    /// Deprecated 2026-06-18: use [`Self::cancel_order_v2`].
+    ///
     /// **Requires auth.**
+    #[deprecated(since = "0.8.0", note = "use cancel_order_v2")]
     pub async fn cancel_order(
         &self,
         order_id: &str,
@@ -771,6 +802,8 @@ impl KalshiRestClient {
         .await
     }
 
+    /// Deprecated 2026-06-18: use [`Self::amend_order_v2`].
+    #[deprecated(since = "0.8.0", note = "use amend_order_v2")]
     pub async fn amend_order(
         &self,
         order_id: &str,
@@ -781,6 +814,8 @@ impl KalshiRestClient {
             .await
     }
 
+    /// Deprecated 2026-06-18: use [`Self::decrease_order_v2`].
+    #[deprecated(since = "0.8.0", note = "use decrease_order_v2")]
     pub async fn decrease_order(
         &self,
         order_id: &str,
@@ -803,6 +838,8 @@ impl KalshiRestClient {
         .await
     }
 
+    /// Deprecated 2026-06-18: use [`Self::batch_create_orders_v2`].
+    #[deprecated(since = "0.8.0", note = "use batch_create_orders_v2")]
     pub async fn batch_create_orders(
         &self,
         body: BatchCreateOrdersRequest,
@@ -812,6 +849,8 @@ impl KalshiRestClient {
             .await
     }
 
+    /// Deprecated 2026-06-18: use [`Self::batch_cancel_orders_v2`].
+    #[deprecated(since = "0.8.0", note = "use batch_cancel_orders_v2")]
     pub async fn batch_cancel_orders(
         &self,
         body: BatchCancelOrdersRequest,
@@ -899,10 +938,11 @@ impl KalshiRestClient {
     pub async fn update_order_group_limit(
         &self,
         order_group_id: &str,
+        params: UpdateOrderGroupLimitParams,
         body: UpdateOrderGroupLimitRequest,
     ) -> Result<EmptyResponse, KalshiError> {
         let path = Self::full_path(&format!("/portfolio/order_groups/{order_group_id}/limit"));
-        self.send(Method::PUT, &path, Option::<&()>::None, Some(&body), true)
+        self.send(Method::PUT, &path, Some(&params), Some(&body), true)
             .await
     }
 
@@ -1003,6 +1043,28 @@ impl KalshiRestClient {
         let path = Self::full_path("/portfolio/events/orders/batched");
         self.send(Method::POST, &path, Option::<&()>::None, Some(&body), true)
             .await
+    }
+
+    /// Cancel every resting event-market order across every exchange shard.
+    ///
+    /// If `subaccount` is omitted, matching orders may come from any subaccount.
+    /// Newly placed orders may also be cancelled during the minute after the
+    /// request. Added 2026-08-27.
+    ///
+    /// **Requires auth.**
+    pub async fn cancel_all_orders_v2(
+        &self,
+        params: SubaccountQueryParams,
+    ) -> Result<EmptyResponse, KalshiError> {
+        let path = Self::full_path("/portfolio/events/orders");
+        self.send(
+            Method::DELETE,
+            &path,
+            Some(&params),
+            Option::<&()>::None,
+            true,
+        )
+        .await
     }
 
     /// Cancel a batch of orders via the V2 event-order endpoint.

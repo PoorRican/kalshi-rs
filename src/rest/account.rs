@@ -79,6 +79,8 @@ pub struct CreateSubaccountResponse {
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct SubaccountBalance {
     pub subaccount_number: u32,
+    /// Exchange index the balance is held on. Added 2026 (exchange sharding rollout).
+    pub exchange_index: i64,
     #[serde(deserialize_with = "deserialize_string_or_number")]
     pub balance: FixedPointDollars,
     pub updated_ts: i64,
@@ -96,6 +98,10 @@ pub struct ApplySubaccountTransferRequest {
     pub from_subaccount: u32,
     pub to_subaccount: u32,
     pub amount_cents: i64,
+    /// Exchange shard to apply the transfer on. Defaults to 0 if unspecified.
+    /// Added 2026 (exchange sharding rollout).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub exchange_index: Option<i64>,
 }
 
 #[derive(Debug, Clone, Deserialize, Default, Serialize)]
@@ -162,6 +168,10 @@ pub struct CreateApiKeyRequest {
     pub public_key: String,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub scopes: Vec<String>,
+    /// Restrict the key to a single sub-account (0-63). Omit for an unrestricted key.
+    /// Added 2026-07-02 (sub-account-restricted API keys).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub subaccount: Option<u32>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -176,6 +186,10 @@ pub struct GenerateApiKeyRequest {
     pub name: String,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub scopes: Vec<String>,
+    /// Restrict the key to a single sub-account (0-63). Omit for an unrestricted key.
+    /// Added 2026-07-02 (sub-account-restricted API keys).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub subaccount: Option<u32>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -210,6 +224,29 @@ pub struct GetSubaccountNettingResponse {
     pub netting_configs: Vec<SubaccountNettingConfig>,
 }
 
+/// One volume-based API usage-level goal (predictions/event_contract lane).
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct AccountApiUsageLevelVolumeGoal {
+    pub level: String,
+    pub earn_volume_goal_fp: String,
+    pub keep_volume_goal_fp: String,
+}
+
+/// Trailing-30d volume progress toward volume-based API usage tiers, as of one computation.
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct AccountApiUsageLevelVolumeProgress {
+    pub computed_ts: i64,
+    pub trailing_30d_volume_fp: String,
+    #[serde(default, deserialize_with = "deserialize_null_as_empty_vec")]
+    pub goals: Vec<AccountApiUsageLevelVolumeGoal>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct GetAccountApiUsageLevelVolumeProgressResponse {
+    #[serde(default, deserialize_with = "deserialize_null_as_empty_vec")]
+    pub volume_progress: Vec<AccountApiUsageLevelVolumeProgress>,
+}
+
 impl KalshiRestClient {
     /// Get API rate-limit and position limits for the account.
     ///
@@ -224,6 +261,34 @@ impl KalshiRestClient {
             true,
         )
         .await
+    }
+
+    /// Get the caller's trailing-30d volume progress toward volume-based API usage tiers.
+    ///
+    /// **Requires auth.**
+    pub async fn get_account_api_usage_volume_progress(
+        &self,
+    ) -> Result<GetAccountApiUsageLevelVolumeProgressResponse, KalshiError> {
+        let path = Self::full_path("/account/api_usage_level/volume_progress");
+        self.send(
+            Method::GET,
+            &path,
+            Option::<&()>::None,
+            Option::<&()>::None,
+            true,
+        )
+        .await
+    }
+
+    /// Self-promote to the Advanced API usage tier. Requires at least one of the caller's
+    /// last 100 Predictions orders to have been created via API.
+    ///
+    /// **Requires auth.**
+    pub async fn upgrade_account_api_usage_level(&self) -> Result<EmptyResponse, KalshiError> {
+        let path = Self::full_path("/account/api_usage_level/upgrade");
+        let body = EmptyResponse::default();
+        self.send(Method::POST, &path, Option::<&()>::None, Some(&body), true)
+            .await
     }
 
     /// List API v2 endpoints whose token cost differs from the default cost.

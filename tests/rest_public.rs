@@ -5,9 +5,8 @@ mod common;
 use kalshi_fast::{
     BatchGetMarketCandlesticksParams, EventStatus, GetEventCandlesticksParams, GetEventsParams,
     GetIncentiveProgramsParams, GetMarketCandlesticksParams, GetMarketsParams, GetMilestonesParams,
-    GetMultivariateEventCollectionLookupHistoryParams, GetMultivariateEventCollectionsParams,
-    GetMultivariateEventsParams, GetSeriesFeeChangesParams, GetSeriesListParams,
-    GetStructuredTargetsParams, GetTradesParams, MarketStatusQuery,
+    GetMultivariateEventCollectionsParams, GetMultivariateEventsParams, GetSeriesFeeChangesParams,
+    GetSeriesListParams, GetStructuredTargetsParams, GetTradesParams, MarketStatusQuery,
 };
 
 fn assert_market_list_shape(market: &kalshi_fast::Market) {
@@ -302,21 +301,6 @@ async fn test_get_exchange_status() {
 }
 
 #[tokio::test]
-async fn test_get_exchange_announcements() {
-    let client = common::demo_client();
-    let resp = tokio::time::timeout(common::TEST_TIMEOUT, async {
-        client.get_exchange_announcements().await
-    })
-    .await
-    .expect("timeout")
-    .expect("request failed");
-
-    if let Some(first) = resp.announcements.first() {
-        assert!(!first.message.is_empty());
-    }
-}
-
-#[tokio::test]
 async fn test_get_exchange_schedule() {
     let client = common::demo_client();
     let resp = tokio::time::timeout(common::TEST_TIMEOUT, async {
@@ -511,42 +495,6 @@ async fn test_get_multivariate_event_collection() {
     .expect("request failed");
 
     assert_eq!(resp.multivariate_contract.collection_ticker, ticker);
-}
-
-#[tokio::test]
-async fn test_get_multivariate_event_collection_lookup_history() {
-    let client = common::demo_client();
-
-    let collections_resp = tokio::time::timeout(common::TEST_TIMEOUT, async {
-        client
-            .get_multivariate_event_collections(GetMultivariateEventCollectionsParams {
-                limit: Some(1),
-                ..Default::default()
-            })
-            .await
-    })
-    .await
-    .expect("timeout")
-    .expect("request failed");
-
-    if collections_resp.multivariate_contracts.is_empty() {
-        return;
-    }
-
-    let ticker = collections_resp.multivariate_contracts[0]
-        .collection_ticker
-        .clone();
-    let _resp = tokio::time::timeout(common::TEST_TIMEOUT, async {
-        client
-            .get_multivariate_event_collection_lookup_history(
-                &ticker,
-                GetMultivariateEventCollectionLookupHistoryParams::default(),
-            )
-            .await
-    })
-    .await
-    .expect("timeout")
-    .expect("request failed");
 }
 
 #[tokio::test]

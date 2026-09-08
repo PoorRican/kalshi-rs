@@ -6,6 +6,8 @@ use std::borrow::Cow;
 #[derive(Debug, Clone, Deserialize)]
 pub struct WsFill {
     pub trade_id: String,
+    /// Exchange shard the fill occurred on. Added 2026-08-20.
+    pub exchange_index: i64,
     pub order_id: String,
     #[serde(default)]
     pub client_order_id: Option<String>,
@@ -43,6 +45,8 @@ pub struct WsFill {
 pub struct WsFillRef<'a> {
     #[serde(borrow)]
     pub trade_id: Cow<'a, str>,
+    /// Exchange shard the fill occurred on. Added 2026-08-20.
+    pub exchange_index: i64,
     #[serde(borrow)]
     pub order_id: Cow<'a, str>,
     #[serde(default, borrow)]
@@ -83,6 +87,7 @@ impl<'a> WsFillRef<'a> {
     pub fn into_owned(self) -> WsFill {
         WsFill {
             trade_id: self.trade_id.into_owned(),
+            exchange_index: self.exchange_index,
             order_id: self.order_id.into_owned(),
             client_order_id: self.client_order_id.map(Cow::into_owned),
             market_ticker: self.market_ticker.into_owned(),
@@ -112,6 +117,7 @@ mod tests {
     fn ws_fill_legacy_side_action_parse() {
         let json = r#"{
             "trade_id":"t",
+            "exchange_index":0,
             "order_id":"o",
             "market_ticker":"T",
             "side":"no",
@@ -134,6 +140,7 @@ mod tests {
     fn ws_fill_normalized_fields_parse() {
         let json = r#"{
             "trade_id":"t",
+            "exchange_index":0,
             "order_id":"o",
             "market_ticker":"T",
             "outcome_side":"yes",

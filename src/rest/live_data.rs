@@ -87,6 +87,134 @@ pub struct LiveData {
     pub extra: Map<String, Value>,
 }
 
+/// Live data for an event, keyed by event ticker. Added 2026-07-30.
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct EventLiveData {
+    #[serde(rename = "type")]
+    pub live_data_type: String,
+    #[serde(default)]
+    pub details: Map<String, Value>,
+    #[serde(default)]
+    pub is_historical: Option<bool>,
+    #[serde(default)]
+    pub default_range: Option<String>,
+    #[serde(default, deserialize_with = "deserialize_null_as_empty_vec")]
+    pub range_options: Vec<String>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct GetEventLiveDataResponse {
+    pub live_data: EventLiveData,
+}
+
+#[derive(Debug, Clone, Default, Serialize)]
+pub struct GetEventLiveDataParams {
+    /// Optional chart range hint (e.g. `15min`, `1h`, `1d`).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub range: Option<String>,
+}
+
+/// Per-station audit reading on a `WeatherIndexPoint`. Added 2026-08-20.
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct WeatherIndexStationReading {
+    pub station_id: String,
+    pub code: String,
+    #[serde(default)]
+    pub source: Option<String>,
+    #[serde(default)]
+    pub temp_f: Option<f64>,
+    #[serde(default)]
+    pub obs_time_ms: Option<i64>,
+    #[serde(default)]
+    pub received_at_ms: Option<i64>,
+    #[serde(default)]
+    pub primary_code: Option<String>,
+}
+
+/// One minute of the Kalshi-computed city temperature index. Added 2026-08-20.
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct WeatherIndexPoint {
+    /// Event minute, unix milliseconds UTC.
+    pub t: i64,
+    /// Published index value, Fahrenheit rounded to 0.01. Absent on `incomplete` points.
+    #[serde(default)]
+    pub v: Option<f64>,
+    /// `normal`, `degraded`, or (with `detailed=true`) `incomplete`.
+    pub status: String,
+    #[serde(default)]
+    pub contributors: Option<i64>,
+    /// Present only on points from the historical backfill seeding a newly listed city.
+    #[serde(default)]
+    pub receipt_basis: Option<String>,
+    #[serde(default, deserialize_with = "deserialize_null_as_empty_vec")]
+    pub stations: Vec<WeatherIndexStationReading>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct GetWeatherIndexResponse {
+    pub city: String,
+    #[serde(default)]
+    pub config_version: Option<String>,
+    /// Always `fahrenheit`.
+    pub units: String,
+    #[serde(default, deserialize_with = "deserialize_null_as_empty_vec")]
+    pub timeseries: Vec<WeatherIndexPoint>,
+}
+
+#[derive(Debug, Clone, Default, Serialize)]
+pub struct GetWeatherIndexParams {
+    /// Window start, unix milliseconds (inclusive). Must be paired with `to`
+    /// unless `last_sec` is used.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub from: Option<i64>,
+    /// Window end, unix milliseconds (inclusive). Defaults to now.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub to: Option<i64>,
+    /// Trailing window in seconds; mutually exclusive with `from`/`to`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub last_sec: Option<i64>,
+    /// Include per-station audit readings on every point.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub detailed: Option<bool>,
+}
+
+/// One configured member station in a weather-index calibration record. Added 2026-08-31.
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct WeatherIndexCalibrationStation {
+    pub station_id: String,
+    pub weight: f64,
+    pub offset_c: f64,
+    #[serde(default)]
+    pub update_note: Option<String>,
+}
+
+/// One published weather-index configuration record. Added 2026-08-31.
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct WeatherIndexCalibration {
+    pub config_version: String,
+    #[serde(default)]
+    pub published_at_ms: Option<i64>,
+    pub effective_at_ms: i64,
+    #[serde(default)]
+    pub change_reason: Option<String>,
+    #[serde(default)]
+    pub calibration_window_start_ms: Option<i64>,
+    #[serde(default)]
+    pub calibration_window_end_ms: Option<i64>,
+    pub city_reference_c: f64,
+    #[serde(default, deserialize_with = "deserialize_null_as_empty_vec")]
+    pub stations: Vec<WeatherIndexCalibrationStation>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct GetWeatherIndexCalibrationsResponse {
+    pub city: String,
+    /// Always `celsius`.
+    pub units: String,
+    #[serde(default, deserialize_with = "deserialize_null_as_empty_vec")]
+    pub calibrations: Vec<WeatherIndexCalibration>,
+}
+
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct GetGameStatsResponse {
     #[serde(default)]
@@ -187,6 +315,58 @@ impl KalshiRestClient {
             Method::GET,
             &path,
             Some(&params),
+            Option::<&()>::None,
+            false,
+        )
+        .await
+    }
+
+    /// Get live data for an event by ticker (crypto price charts, commodity price
+    /// timeseries, weather observations, etc.). Added 2026-07-30.
+    pub async fn get_event_live_data(
+        &self,
+        event_ticker: &str,
+        params: GetEventLiveDataParams,
+    ) -> Result<GetEventLiveDataResponse, KalshiError> {
+        let path = Self::full_path(&format!("/live_data/events/{event_ticker}"));
+        self.send(
+            Method::GET,
+            &path,
+            Some(&params),
+            Option::<&()>::None,
+            false,
+        )
+        .await
+    }
+
+    /// Get the Kalshi-computed city temperature index (canonical minute-resolution
+    /// series behind hourly temperature markets). Added 2026-08-20.
+    pub async fn get_weather_index(
+        &self,
+        city: &str,
+        params: GetWeatherIndexParams,
+    ) -> Result<GetWeatherIndexResponse, KalshiError> {
+        let path = Self::full_path(&format!("/live_data/weather/{city}"));
+        self.send(
+            Method::GET,
+            &path,
+            Some(&params),
+            Option::<&()>::None,
+            false,
+        )
+        .await
+    }
+
+    /// Get a city's published weather-index configuration timeline. Added 2026-08-31.
+    pub async fn get_weather_index_calibrations(
+        &self,
+        city: &str,
+    ) -> Result<GetWeatherIndexCalibrationsResponse, KalshiError> {
+        let path = Self::full_path(&format!("/live_data/weather/{city}/calibrations"));
+        self.send(
+            Method::GET,
+            &path,
+            Option::<&()>::None,
             Option::<&()>::None,
             false,
         )

@@ -179,22 +179,22 @@ async fn test_quote_lifecycle() {
 
     // 3. Get the quote and verify
     let get_resp = tokio::time::timeout(common::TEST_TIMEOUT, async {
-        client.get_quote(&quote_id).await
+        client.get_quote_by_rfq(&rfq_id, &quote_id).await
     })
     .await
     .expect("timeout")
-    .expect("get_quote failed");
+    .expect("get_quote_by_rfq failed");
 
     assert_eq!(get_resp.quote.id, quote_id);
     assert_eq!(get_resp.quote.rfq_id, rfq_id);
 
     // 4. Delete the quote (cleanup)
     let _delete_quote = tokio::time::timeout(common::TEST_TIMEOUT, async {
-        client.delete_quote(&quote_id).await
+        client.delete_quote_by_rfq(&rfq_id, &quote_id).await
     })
     .await
     .expect("timeout")
-    .expect("delete_quote failed");
+    .expect("delete_quote_by_rfq failed");
 
     // 5. Delete the RFQ (cleanup)
     let _delete_rfq = tokio::time::timeout(common::TEST_TIMEOUT, async {

@@ -52,6 +52,8 @@ pub struct WsQuoteCreated {
     pub quote_id: String,
     pub rfq_id: String,
     pub quote_creator_id: String,
+    #[serde(default)]
+    pub rfq_creator_id: Option<String>,
     pub market_ticker: String,
     #[serde(default)]
     pub event_ticker: Option<String>,
@@ -64,6 +66,9 @@ pub struct WsQuoteCreated {
     #[serde(default)]
     pub rfq_target_cost_dollars: Option<FixedPointDollars>,
     pub created_ts: String,
+    /// Present only when your side of this quote used a subaccount. Added 2026-07-30.
+    #[serde(default)]
+    pub subaccount: Option<u32>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -71,6 +76,8 @@ pub struct WsQuoteAccepted {
     pub quote_id: String,
     pub rfq_id: String,
     pub quote_creator_id: String,
+    #[serde(default)]
+    pub rfq_creator_id: Option<String>,
     pub market_ticker: String,
     #[serde(default)]
     pub event_ticker: Option<String>,
@@ -86,6 +93,9 @@ pub struct WsQuoteAccepted {
     pub no_contracts_offered_fp: Option<FixedPointCount>,
     #[serde(default)]
     pub rfq_target_cost_dollars: Option<FixedPointDollars>,
+    /// Present only when your side of this quote used a subaccount. Added 2026-07-30.
+    #[serde(default)]
+    pub subaccount: Option<u32>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -98,6 +108,9 @@ pub struct WsQuoteExecuted {
     pub client_order_id: String,
     pub market_ticker: String,
     pub executed_ts: String,
+    /// Present only when your side of this quote used a subaccount. Added 2026-07-30.
+    #[serde(default)]
+    pub subaccount: Option<u32>,
 }
 
 /// Communications message payloads (RFQs and quotes).
@@ -215,6 +228,8 @@ pub struct WsQuoteCreatedRef<'a> {
     pub rfq_id: Cow<'a, str>,
     #[serde(borrow)]
     pub quote_creator_id: Cow<'a, str>,
+    #[serde(default, borrow)]
+    pub rfq_creator_id: Option<Cow<'a, str>>,
     #[serde(borrow)]
     pub market_ticker: Cow<'a, str>,
     #[serde(default, borrow)]
@@ -231,6 +246,8 @@ pub struct WsQuoteCreatedRef<'a> {
     pub rfq_target_cost_dollars: Option<FixedPointDollarsRef<'a>>,
     #[serde(borrow)]
     pub created_ts: Cow<'a, str>,
+    #[serde(default)]
+    pub subaccount: Option<u32>,
 }
 
 impl<'a> WsQuoteCreatedRef<'a> {
@@ -239,6 +256,7 @@ impl<'a> WsQuoteCreatedRef<'a> {
             quote_id: self.quote_id.into_owned(),
             rfq_id: self.rfq_id.into_owned(),
             quote_creator_id: self.quote_creator_id.into_owned(),
+            rfq_creator_id: self.rfq_creator_id.map(Cow::into_owned),
             market_ticker: self.market_ticker.into_owned(),
             event_ticker: self.event_ticker.map(Cow::into_owned),
             yes_bid_dollars: self.yes_bid_dollars.into_owned(),
@@ -247,6 +265,7 @@ impl<'a> WsQuoteCreatedRef<'a> {
             no_contracts_offered_fp: self.no_contracts_offered_fp.map(Cow::into_owned),
             rfq_target_cost_dollars: self.rfq_target_cost_dollars.map(Cow::into_owned),
             created_ts: self.created_ts.into_owned(),
+            subaccount: self.subaccount,
         }
     }
 }
@@ -259,6 +278,8 @@ pub struct WsQuoteAcceptedRef<'a> {
     pub rfq_id: Cow<'a, str>,
     #[serde(borrow)]
     pub quote_creator_id: Cow<'a, str>,
+    #[serde(default, borrow)]
+    pub rfq_creator_id: Option<Cow<'a, str>>,
     #[serde(borrow)]
     pub market_ticker: Cow<'a, str>,
     #[serde(default, borrow)]
@@ -277,6 +298,8 @@ pub struct WsQuoteAcceptedRef<'a> {
     pub no_contracts_offered_fp: Option<FixedPointCountRef<'a>>,
     #[serde(default, borrow)]
     pub rfq_target_cost_dollars: Option<FixedPointDollarsRef<'a>>,
+    #[serde(default)]
+    pub subaccount: Option<u32>,
 }
 
 impl<'a> WsQuoteAcceptedRef<'a> {
@@ -285,6 +308,7 @@ impl<'a> WsQuoteAcceptedRef<'a> {
             quote_id: self.quote_id.into_owned(),
             rfq_id: self.rfq_id.into_owned(),
             quote_creator_id: self.quote_creator_id.into_owned(),
+            rfq_creator_id: self.rfq_creator_id.map(Cow::into_owned),
             market_ticker: self.market_ticker.into_owned(),
             event_ticker: self.event_ticker.map(Cow::into_owned),
             yes_bid_dollars: self.yes_bid_dollars.into_owned(),
@@ -294,6 +318,7 @@ impl<'a> WsQuoteAcceptedRef<'a> {
             yes_contracts_offered_fp: self.yes_contracts_offered_fp.map(Cow::into_owned),
             no_contracts_offered_fp: self.no_contracts_offered_fp.map(Cow::into_owned),
             rfq_target_cost_dollars: self.rfq_target_cost_dollars.map(Cow::into_owned),
+            subaccount: self.subaccount,
         }
     }
 }
@@ -316,6 +341,8 @@ pub struct WsQuoteExecutedRef<'a> {
     pub market_ticker: Cow<'a, str>,
     #[serde(borrow)]
     pub executed_ts: Cow<'a, str>,
+    #[serde(default)]
+    pub subaccount: Option<u32>,
 }
 
 impl<'a> WsQuoteExecutedRef<'a> {
@@ -329,6 +356,7 @@ impl<'a> WsQuoteExecutedRef<'a> {
             client_order_id: self.client_order_id.into_owned(),
             market_ticker: self.market_ticker.into_owned(),
             executed_ts: self.executed_ts.into_owned(),
+            subaccount: self.subaccount,
         }
     }
 }

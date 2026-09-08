@@ -91,6 +91,46 @@ examples are ambiguous.
   (`ts_ms` on ticker/trade/order-group messages, the legacy direction fields). These are modeled as
   `Option` so parsing never fails on their absence.
 
+- **Exchange sharding (2026 rollout).** Kalshi is provisioning dedicated exchange shards
+  (`exchange_index`) for select market categories. `exchange_index` is `i64` (not `Option`) on
+  `Fill`, `Settlement`, `MarketPosition`, `SubaccountBalance`, and the WebSocket `WsFill` message,
+  matching the OpenAPI/AsyncAPI `required` list for those exact shapes. It is `Option<i64>` on
+  `Market`, `Series`, `MultivariateEventCollection`, `WsMarketLifecycleV2` (only present on
+  `created` events), `WsEventLifecycle`, and `WsUserOrder`, matching the spec there. Only 0 is
+  currently live in production; the field exists to future-proof clients ahead of sharding.
+- `ws::types::mod.rs` previously carried an internal `MarketPositionRef`/`EventPositionRef` pair
+  that reused the REST `MarketPosition`/`EventPosition` shapes for the `market_positions` WebSocket
+  channel. This was dead code — the channel's real wire shape (`user_id`, `market_ticker`,
+  `position_cost_dollars`, `position_fee_cost_dollars`, `volume_fp`, ...) has always been modeled
+  correctly and separately as `WsMarketPosition`/`WsMarketPositionRef` in
+  `ws/types/messages/positions.rs`, which is what's actually wired into the parser. Removed in
+  0.8.0 rather than patched, since it was never reachable.
+- `WsQuoteCreated` and `WsQuoteAccepted` were missing `rfq_creator_id` (present in the AsyncAPI
+  schema since at least 0.6.0) and all three quote lifecycle messages (`WsQuoteCreated`,
+  `WsQuoteAccepted`, `WsQuoteExecuted`) were missing `subaccount` (added upstream 2026-07-30, and
+  documented as "matching `quote_accepted`/`quote_executed`" even though neither actually had it in
+  this crate). All four fields are now modeled as `Option`, since none of these three structs carry
+  a flatten `extra` catch-all.
+- `pyth_value` (AsyncAPI, added 2026-07-23) and `cfbenchmarks_value_5hz` (added 2026-09-03) are new
+  WebSocket channels **not yet implemented**. Both need new `WsUpdateAction` variants
+  (`SubscribeUnderlyings`/`UnsubscribeUnderlyings`/an underlying-list action for `pyth_value`; an
+  index-list variant shared with `cfbenchmarks_value` for the 5Hz channel), new subscription
+  validation (mirroring the `index_ids` handling already in place for `cfbenchmarks_value`), and new
+  message types (`pythValue`, `pythUnderlyingList`, `cfbenchmarksValue5Hz`,
+  `cfbenchmarks5HzIndexList`). Deferred to a follow-up refresh rather than adding a partial,
+  unvalidated implementation.
+- `Market.price_level_structure` stays an opaque `String` (not an enum) by design: the exchange has
+  added many new structure values over time (`center_deci_edge_centi_cent` and seven
+  `center_{center}_edge_{edge}_cent` variants as of 2026-08), and upstream explicitly recommends
+  reading valid prices from `price_ranges` dynamically rather than keying logic off the structure
+  name. The same reasoning applies to the top-level `price_level_structure` field on
+  `WsMarketLifecycleV2`.
+- `FractionalTradingUpdated` was removed from `WsMarketLifecycleEventType` and
+  `fractional_trading_enabled` was removed from `WsMarketLifecycleV2` alongside the REST
+  `Market.fractional_trading_enabled` removal (2026-07-09): the AsyncAPI `market_lifecycle_v2`
+  `event_type` enum no longer lists `fractional_trading_updated`, and the field is gone from the
+  payload schema.
+
 ## Test Strategy
 
 - Deterministic parsing and behavior checks: `tests/parsing.rs`,

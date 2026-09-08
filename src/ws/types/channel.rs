@@ -8,7 +8,6 @@ pub enum WsChannelV2 {
     Trade,
     MarketLifecycleV2,
     MultivariateMarketLifecycle,
-    Multivariate,
     OrderbookDelta,
     Fill,
     MarketPositions,
@@ -26,7 +25,6 @@ impl WsChannelV2 {
             WsChannelV2::Trade => "trade",
             WsChannelV2::MarketLifecycleV2 => "market_lifecycle_v2",
             WsChannelV2::MultivariateMarketLifecycle => "multivariate_market_lifecycle",
-            WsChannelV2::Multivariate => "multivariate",
             WsChannelV2::OrderbookDelta => "orderbook_delta",
             WsChannelV2::Fill => "fill",
             WsChannelV2::MarketPositions => "market_positions",
@@ -71,6 +69,5 @@ mod tests {
         assert!(!WsChannelV2::Ticker.is_private());
         assert!(!WsChannelV2::Trade.is_private());
         assert!(!WsChannelV2::MarketLifecycleV2.is_private());
-        assert!(!WsChannelV2::Multivariate.is_private());
     }
 }
